@@ -509,10 +509,17 @@ try {
   console.error('[Birds] Failed to load sightings:', err);
 }
 
+// Retention window, not a count cap — a fixed entry count (this used to be
+// 500, capped in-memory at insert time) gets blown through in well under a
+// day on an active property (1000+ detections/24h isn't unusual), silently
+// evicting same-day sightings before the day is even over. Pruning by age
+// instead means "today" is never truncated regardless of volume.
+const BIRD_SIGHTINGS_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 function saveBirdSightings() {
   try {
-    const newData = JSON.stringify(birdSightings.slice(0, 1000), null, 2); // Keep last 1000
-    fs.writeFileSync(BIRD_SIGHTINGS_FILE, newData);
+    const cutoff = Date.now() - BIRD_SIGHTINGS_RETENTION_MS;
+    birdSightings = birdSightings.filter((s) => s.timestamp >= cutoff);
+    fs.writeFileSync(BIRD_SIGHTINGS_FILE, JSON.stringify(birdSightings, null, 2));
   } catch (err) {
     console.error('[Birds] Failed to save sightings:', err);
   }
@@ -919,7 +926,6 @@ async function startServer() {
             };
 
             birdSightings.unshift(sighting);
-            if (birdSightings.length > 500) birdSightings.pop();
             saveBirdSightings();
 
             broadcastToSse({ type: 'bird_sighting', sighting });
