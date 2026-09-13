@@ -4,6 +4,35 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-09-13 — Speed up Live grid snapshot polling from 2s to 500ms
+
+Before deploying (commit `6b90fc7`), a backup point was made of the last-known-good build (commit `cea0146` — WebRTC codec fix, running live and stable at the time).
+
+**Git tag:** [`pre-snapshot-500ms-2026-09-13`](https://github.com/jchisholm59/WatchTower/tree/pre-snapshot-500ms-2026-09-13) at commit `cea0146`
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-snapshot-500ms-20260913-120133/`
+
+User noticed the Live grid (fixed earlier to poll still images instead of holding a permanent MJPEG connection per tile) looked noticeably jerky at the original 2-second poll interval — ~0.5fps vs the camera's native ~5fps. Since each poll is a short-lived request rather than a held-open connection, tightening the interval doesn't reintroduce the original per-origin connection-limit bug it was built to avoid — just `CameraFeedCanvas`'s `snapshotIntervalMs` default changed from 2000 to 500. Verified live against all 7 real cameras: requests fire at the new cadence, mostly `200 OK` with only occasional benign `net::ERR_ABORTED` (a newer poll superseding one still in flight), no error spam or backlog after a sustained check post-restart.
+
+### To revert
+
+**Fast path — restores the exact build that was running, no rebuild, back in seconds:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-snapshot-500ms-20260913-120133 dist && pm2 restart watchtower"
+```
+
+**Full path — also rolls back the source tree to that commit:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-snapshot-500ms-2026-09-13 -- src/components/CameraFeedCanvas.tsx && npm run build && pm2 restart watchtower"
+```
+
+After either, confirm it came back up:
+```bash
+curl -s http://192.168.2.210:8100/api/birds/status
+```
+
+---
+
 ## 2026-09-13 — WebRTC: pick an H.264 stream, not just whichever is tagged audio
 
 Before deploying (commit `cea0146`), a backup point was made of the last-known-good build (commit `86d5325` — initial WebRTC audio feature, running live and stable at the time).
