@@ -1040,8 +1040,18 @@ async function startServer() {
     res.json({ success: true, settings: persistentSettings });
   });
 
-  app.get('/api/birds/sightings', (_req, res) => {
-    res.json({ success: true, sightings: birdSightings });
+  app.get('/api/birds/sightings', (req, res) => {
+    // Default to today's sightings only — the UI presents this as a daily
+    // feed ("Signals Processed Today"), but until now this returned every
+    // sighting ever recorded (up to the 500-entry cap), so it kept
+    // accumulating across days instead of resetting at midnight.
+    // ?all=true opts back into the full stored history.
+    if (req.query.all === 'true') {
+      return res.json({ success: true, sightings: birdSightings });
+    }
+    const todayKey = localDateKey();
+    const todaysSightings = birdSightings.filter((s) => localDateKey(new Date(s.timestamp)) === todayKey);
+    res.json({ success: true, sightings: todaysSightings });
   });
 
   app.post('/api/birds/clear', (_req, res) => {
