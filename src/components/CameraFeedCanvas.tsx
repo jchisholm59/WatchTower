@@ -14,6 +14,16 @@ interface CameraFeedCanvasProps {
   className?: string;
   onObjectClick?: (object: DetectedObject) => void;
   onSnapshotTaken?: (dataUrl: string) => void;
+  /** 'live' (default) holds one continuous MJPEG connection open for this
+   *  camera — fine one-at-a-time (detail view, zone editor), but browsers
+   *  cap concurrent connections per origin at ~6, so a grid rendering every
+   *  camera at once starts silently starving cameras past that limit —
+   *  they queue forever and never show a frame. 'snapshot' instead polls a
+   *  still image on an interval, which uses one short-lived request at a
+   *  time per tile instead of holding a socket open indefinitely, so a
+   *  grid of any size stays under the connection cap. */
+  streamMode?: 'live' | 'snapshot';
+  snapshotIntervalMs?: number;
 }
 
 export const CameraFeedCanvas: React.FC<CameraFeedCanvasProps> = ({
@@ -28,10 +38,13 @@ export const CameraFeedCanvas: React.FC<CameraFeedCanvasProps> = ({
   panY = 0,
   className = '',
   onObjectClick,
+  streamMode = 'live',
+  snapshotIntervalMs = 2000,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const [activeDetections, setActiveDetections] = useState<DetectedObject[]>([]);
+  const [snapshotTick, setSnapshotTick] = useState(0);
 
   // 1. Identify if this is a real Frigate stream
   const isFrigate = Boolean(camera.frigate_url);
@@ -40,6 +53,21 @@ export const CameraFeedCanvas: React.FC<CameraFeedCanvasProps> = ({
   const streamUrl = isFrigate
     ? `/api/frigate/proxy/stream?serverUrl=${encodeURIComponent(camera.frigate_url!)}&camera=${camera.id}`
     : (camera.liveStreamUrl || camera.mjpegStreamUrl);
+
+  // 2b. Snapshot mode: re-fetch a still on an interval instead of holding a
+  // stream connection open. Cache-bust with the tick since the image proxy
+  // is already no-store server-side but the <img> src string itself needs
+  // to change for the browser to issue a new request each poll.
+  const snapshotBaseUrl = camera.liveImageUrl;
+  const snapshotUrl = snapshotBaseUrl
+    ? `${snapshotBaseUrl}${snapshotBaseUrl.includes('?') ? '&' : '?'}_t=${snapshotTick}`
+    : undefined;
+
+  useEffect(() => {
+    if (streamMode !== 'snapshot' || isPaused || !camera.isLiveStream || !snapshotBaseUrl) return;
+    const interval = setInterval(() => setSnapshotTick((t) => t + 1), snapshotIntervalMs);
+    return () => clearInterval(interval);
+  }, [streamMode, isPaused, camera.isLiveStream, snapshotBaseUrl, snapshotIntervalMs]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -147,8 +175,9 @@ export const CameraFeedCanvas: React.FC<CameraFeedCanvasProps> = ({
 
   return (
     <div className={`relative overflow-hidden bg-black flex items-center justify-center ${className}`} style={{ aspectRatio: '16/9' }}>
-      {/* 100% Reliable Native MJPEG Streaming */}
-      {camera.isLiveStream && !isPaused && (
+      {/* Continuous MJPEG stream — one persistent connection, used when only
+          one or two of these are ever mounted at a time (detail view, zone editor). */}
+      {streamMode === 'live' && camera.isLiveStream && !isPaused && (
         <img
           src={streamUrl}
           alt={camera.name}
@@ -159,6 +188,23 @@ export const CameraFeedCanvas: React.FC<CameraFeedCanvasProps> = ({
           }}
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = 'none';
+          }}
+        />
+      )}
+
+      {/* Polled still snapshot — used for grid tiles, where mounting every
+          camera's continuous stream at once would exceed the browser's
+          per-origin connection limit and leave the extras permanently
+          black. Errors are left alone (not hidden) since the next poll
+          retries on its own. */}
+      {streamMode === 'snapshot' && camera.isLiveStream && !isPaused && snapshotUrl && (
+        <img
+          src={snapshotUrl}
+          alt={camera.name}
+          className="max-w-full max-h-full w-auto h-auto object-contain"
+          style={{
+            transform: `scale(${zoom}) translate(${panX}px, ${panY}px)`,
+            transformOrigin: 'center',
           }}
         />
       )}

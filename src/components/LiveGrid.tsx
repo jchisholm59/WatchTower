@@ -362,6 +362,7 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
                   showMotionMasks={showMasks}
                   showHud={true}
                   onObjectClick={(obj) => onSelectObject && onSelectObject(camera, obj)}
+                  streamMode="snapshot"
                 />
 
                 {/* Hover overlay button to inspect */}
