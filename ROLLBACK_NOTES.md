@@ -4,6 +4,35 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-09-13 — BirdNET 500-entry cap replaced with 7-day retention window
+
+Before deploying (commit `ad89215`), a backup point was made of the last-known-good build (commit `79be2fa` — today-only sightings filter, running live and stable at the time).
+
+**Git tag:** [`pre-bird-retention-fix-2026-09-13`](https://github.com/jchisholm59/WatchTower/tree/pre-bird-retention-fix-2026-09-13) at commit `79be2fa`
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-bird-retention-fix-20260913-075342/`
+
+User flagged that the just-deployed today-only filter (previous entry below) could be undercounting: they routinely get well over 500 bird detections in 24h. Confirmed via `pm2 logs` (1253+ "[BirdNET] Heard:" lines in the recent buffer) and the stored file being pinned at exactly 500 entries — `birdSightings.unshift(sighting); if (birdSightings.length > 500) birdSightings.pop();` was a hard count cap, not a per-day one, silently evicting same-day sightings once a busy day blew past 500, well before midnight. Replaced with age-based pruning in `saveBirdSightings()` (keep last 7 days, no count limit) instead of the old `slice(0, 1000)`-that-never-ran-because-the-array-never-got-that-big dead code. Verified live: restarted, confirmed the stored file grew to 501 entries (past the old hard ceiling) on the very next detection instead of staying pinned at 500.
+
+### To revert
+
+**Fast path — restores the exact build that was running, no rebuild, back in seconds:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-bird-retention-fix-20260913-075342 dist && pm2 restart watchtower"
+```
+
+**Full path — also rolls back the source tree to that commit:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-bird-retention-fix-2026-09-13 -- server.ts && npm run build && pm2 restart watchtower"
+```
+
+After either, confirm it came back up:
+```bash
+curl -s http://192.168.2.210:8100/api/birds/status
+```
+
+---
+
 ## 2026-09-13 — BirdNET sightings feed defaults to today only
 
 Before deploying (commit `79be2fa`), a backup point was made of the last-known-good build (commit `b860e07` — box coordinate/bird-alert-persistence fix, running live and stable at the time).
