@@ -4,6 +4,37 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-09-13 — Live grid uses WebRTC when available, not just snapshot polling
+
+Before deploying (commit `e6f1a46`), a backup point was made of the last-known-good build (commit `6b90fc7` — 500ms snapshot polling, running live and stable at the time).
+
+**Git tag:** [`pre-grid-webrtc-2026-09-13`](https://github.com/jchisholm59/WatchTower/tree/pre-grid-webrtc-2026-09-13) at commit `6b90fc7`
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-grid-webrtc-20260913-121757/`
+
+User asked whether WebRTC (already used for the single-camera detail view) could replace snapshot polling in the grid too, for smoother video across all 7 cameras at once — inspired by a separate Direct-NVR deployment (`192.168.2.73:3010`, a Proxmox LXC) that runs all 7 cameras over WebRTC smoothly. First attempt: tested locally via this session's own browser automation tooling, which showed severe frame drops (94-100%, `getVideoPlaybackQuality()`) running all 7 simultaneously — but that's very likely a limitation of the automation browser itself (no GPU-accelerated decode available in that sandboxed context) rather than a real architectural ceiling, given a real separate deployment handles the same load fine in an actual browser. Reverted that first attempt, then re-deployed after this discussion since the user's own browser is the only reliable way to judge real-world video decode performance — this session's testing tooling isn't representative for concurrent hardware-decoded video.
+
+`LiveGrid` now computes `useWebrtc = Boolean(camera.frigate_url && camera.go2rtcStreamName)` per camera and uses WebRTC when available, falling back to snapshot mode for simulated cameras or a stale camera list (needs "Resync Feeds" to pick up `go2rtcStreamName`) — same guard pattern as `CameraDetailModal`. **Not independently verified working smoothly in a real browser as of this deploy** — the user needs to confirm it actually performs well on their end; if it doesn't, the fast-path revert below is the way back to the known-good snapshot-polling grid.
+
+### To revert
+
+**Fast path — restores the exact build that was running, no rebuild, back in seconds:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-grid-webrtc-20260913-121757 dist && pm2 restart watchtower"
+```
+
+**Full path — also rolls back the source tree to that commit:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-grid-webrtc-2026-09-13 -- src/components/LiveGrid.tsx && npm run build && pm2 restart watchtower"
+```
+
+After either, confirm it came back up:
+```bash
+curl -s http://192.168.2.210:8100/api/birds/status
+```
+
+---
+
 ## 2026-09-13 — Speed up Live grid snapshot polling from 2s to 500ms
 
 Before deploying (commit `6b90fc7`), a backup point was made of the last-known-good build (commit `cea0146` — WebRTC codec fix, running live and stable at the time).
