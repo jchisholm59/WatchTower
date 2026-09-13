@@ -291,6 +291,13 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
         >
           {displayedCameras.map((camera) => {
             const primaryObj = camera.detectedObjects && camera.detectedObjects.length > 0 ? camera.detectedObjects[0] : null;
+            // WebRTC doesn't hold a persistent HTTP connection the way MJPEG
+            // did, so it doesn't hit the browser's per-origin connection cap
+            // that black-screened cameras past the 5th — but it does need a
+            // real Frigate camera with a resolved go2rtc stream name.
+            // Simulated cameras, or a camera list fetched before that field
+            // existed (needs a "Resync Feeds"), fall back to snapshot mode.
+            const useWebrtc = Boolean(camera.frigate_url && camera.go2rtcStreamName);
 
             return (
               <div
@@ -362,7 +369,7 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
                   showMotionMasks={showMasks}
                   showHud={true}
                   onObjectClick={(obj) => onSelectObject && onSelectObject(camera, obj)}
-                  streamMode="snapshot"
+                  streamMode={useWebrtc ? 'webrtc' : 'snapshot'}
                 />
 
                 {/* Hover overlay button to inspect */}
