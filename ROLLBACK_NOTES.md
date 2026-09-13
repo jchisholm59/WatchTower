@@ -4,6 +4,35 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-09-13 — BirdNET sightings feed defaults to today only
+
+Before deploying (commit `79be2fa`), a backup point was made of the last-known-good build (commit `b860e07` — box coordinate/bird-alert-persistence fix, running live and stable at the time).
+
+**Git tag:** [`pre-bird-today-filter-2026-09-13`](https://github.com/jchisholm59/WatchTower/tree/pre-bird-today-filter-2026-09-13) at commit `b860e07`
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-bird-today-filter-20260913-075023/`
+
+User noticed the Birds tab was cumulatively listing every sighting since the app was started the day before, not just today's — despite the UI already labeling the count "Signals Processed Today". `GET /api/birds/sightings` returned the entire stored history (up to the 500-entry cap) with no date filtering at all. Confirmed on the live NUC's `bird_sightings.json`: 500 stored sightings spanning 2026-09-12 15:59 through 2026-09-13 07:49. Now filters to the server's local calendar day (reusing the same `localDateKey()` helper added for the BirdNET daily-alert dedup fix) by default; `?all=true` still returns the full stored history if ever needed. Verified by replicating the exact filter logic against the real stored file: 500 total → 205 for today (2026-09-13), matching expectations.
+
+### To revert
+
+**Fast path — restores the exact build that was running, no rebuild, back in seconds:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-bird-today-filter-20260913-075023 dist && pm2 restart watchtower"
+```
+
+**Full path — also rolls back the source tree to that commit:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-bird-today-filter-2026-09-13 -- server.ts && npm run build && pm2 restart watchtower"
+```
+
+After either, confirm it came back up:
+```bash
+curl -s http://192.168.2.210:8100/api/birds/status
+```
+
+---
+
 ## 2026-09-12 — Fix Frigate box coordinate order/resolution (driveway spam) + persist BirdNET daily-alert dedup
 
 Before deploying (commit `b860e07`), a backup point was made of the last-known-good build (commit `8dabf18` — zone auto-create fix, running live and stable at the time).
