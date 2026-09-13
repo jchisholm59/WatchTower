@@ -4,6 +4,39 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-09-13 — Fix black camera tiles past the 5th camera in Live Streams grid
+
+Before deploying (commit `908cd87`), a backup point was made of the last-known-good build (commit `ad89215` — BirdNET retention-window fix, running live and stable at the time).
+
+**Git tag:** [`pre-live-grid-connection-fix-2026-09-13`](https://github.com/jchisholm59/WatchTower/tree/pre-live-grid-connection-fix-2026-09-13) at commit `ad89215`
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-live-grid-connection-fix-20260913-081955/`
+
+User has 7 cameras (Porch, Driveway, Tapo-Deck, Reo-Deck, Livingroom, Reo-Yard, Family Room); the first 5 always displayed in the Live Streams grid, the last 2 were always black. Root cause: every grid tile mounted its own permanent MJPEG stream (`<img src="/api/frigate/proxy/stream?...">`), held open indefinitely. Browsers cap concurrent connections per origin at 6 (HTTP/1.1), and WatchTower's own live-events SSE connection already occupies one of those, leaving exactly 5 slots — any camera past the 5th queues forever and never renders. Reproduced live against the user's real 7-camera Frigate server (local dev pointed at `192.168.2.210:5000`): Porch/Driveway/Livingroom/Tapo-Deck/Reo-Deck got `200 OK`, Reo-Yard and Family Room stuck pending indefinitely — confirmed positional (depends on which 5 connect first), not tied to those two cameras' identity.
+
+Separately diagnosed and confirmed as a genuinely different, camera-side issue (not fixed here, nothing to fix in WatchTower): Family Room's camera at `192.168.50.73` is unreachable from the NUC (`Destination Host Unreachable`) and Frigate hasn't received a frame from it since May 17 — needs the physical camera/network checked.
+
+Fix: `CameraFeedCanvas` gained a `streamMode` prop — `'live'` (default, unchanged) holds one continuous MJPEG connection, used where only one or two instances are ever mounted at once (camera detail view, Zone Studio); `'snapshot'` instead polls a still image every 2s via the existing image-proxy endpoint, which only ever needs one short-lived request per tile at a time. `LiveGrid` now passes `streamMode="snapshot"` so a grid of any size stays under the browser's connection cap. Verified live: after switching the local dev instance to the real Home Frigate server, all 7 cameras showed `200 OK` on every poll tick, and a screenshot confirmed Reo-Yard and Family Room rendering real (non-black) frames alongside the other 5.
+
+### To revert
+
+**Fast path — restores the exact build that was running, no rebuild, back in seconds:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-live-grid-connection-fix-20260913-081955 dist && pm2 restart watchtower"
+```
+
+**Full path — also rolls back the source tree to that commit:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-live-grid-connection-fix-2026-09-13 -- src/components/CameraFeedCanvas.tsx src/components/LiveGrid.tsx && npm run build && pm2 restart watchtower"
+```
+
+After either, confirm it came back up:
+```bash
+curl -s http://192.168.2.210:8100/api/birds/status
+```
+
+---
+
 ## 2026-09-13 — BirdNET 500-entry cap replaced with 7-day retention window
 
 Before deploying (commit `ad89215`), a backup point was made of the last-known-good build (commit `79be2fa` — today-only sightings filter, running live and stable at the time).
