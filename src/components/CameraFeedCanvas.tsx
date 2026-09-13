@@ -43,7 +43,7 @@ export const CameraFeedCanvas: React.FC<CameraFeedCanvasProps> = ({
   className = '',
   onObjectClick,
   streamMode = 'live',
-  snapshotIntervalMs = 2000,
+  snapshotIntervalMs = 500,
   muted = true,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
