@@ -4,6 +4,37 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-09-13 — WebRTC: pick an H.264 stream, not just whichever is tagged audio
+
+Before deploying (commit `cea0146`), a backup point was made of the last-known-good build (commit `86d5325` — initial WebRTC audio feature, running live and stable at the time).
+
+**Git tag:** [`pre-webrtc-codec-fix-2026-09-13`](https://github.com/jchisholm59/WatchTower/tree/pre-webrtc-codec-fix-2026-09-13) at commit `86d5325`
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-webrtc-codec-fix-20260913-110620/`
+
+User reported the just-shipped WebRTC detail view had audio but no video, after a full Firefox restart ruled out a stale tab. Root cause: Firefox's WebRTC stack can't decode H.265 — the connection negotiates and audio plays fine, but video silently never renders (`readyState` stuck at 0). Confirmed live via go2rtc's own stream/codec info that porch and driveway's Frigate-tagged "audio" stream (`_1`) is H.265, while their other stream (`_2`) is H.264 *and* also carries audio despite not being role-tagged for it — Frigate's static YAML role tags don't reliably reflect either the real codec or which streams actually have audio. (Every other camera already used H.264 on both streams, which is why testing against reo-yard earlier hadn't caught this.)
+
+`fetch-config` now queries go2rtc's live `/api/go2rtc/streams` info once and scores each camera's candidate go2rtc streams by (not H.265) + (has audio), instead of trusting the ffmpeg 'audio' role tag alone. Falls back to the old tag-based heuristic if that query fails. Verified live: porch/driveway now resolve to `_2` instead of `_1`; the detail view shows real decoding video (`readyState 4`, correct 1280x720) with live audio on porch, the exact camera that was previously audio-only.
+
+### To revert
+
+**Fast path — restores the exact build that was running, no rebuild, back in seconds:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-webrtc-codec-fix-20260913-110620 dist && pm2 restart watchtower"
+```
+
+**Full path — also rolls back the source tree to that commit:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-webrtc-codec-fix-2026-09-13 -- server.ts && npm run build && pm2 restart watchtower"
+```
+
+After either, confirm it came back up:
+```bash
+curl -s http://192.168.2.210:8100/api/birds/status
+```
+
+---
+
 ## 2026-09-13 — Live audio in the camera detail view (WebRTC via go2rtc)
 
 Before deploying (commit `86d5325`), a backup point was made of the last-known-good build (commit `908cd87` — Live grid connection-limit fix, running live and stable at the time).
