@@ -155,6 +155,25 @@ Docker will automatically create a volume to persist your settings:
   docker compose up -d --build
   ```
 
+### 5. Enable Live Audio in the Camera Detail View (WebRTC)
+
+Opening a camera's expanded "Inspect & Detail" view streams over WebRTC via Frigate's embedded go2rtc, which is the only path with real audio (the grid uses MJPEG/snapshot polling instead, which has no audio channel at all — that's a format limitation, not a bug). To actually get video *and* audio there, one small addition to Frigate's own `config.yml` is usually required:
+
+```yaml
+go2rtc:
+  streams:
+    ...(your existing camera entries)...
+  webrtc:
+    candidates:
+      - YOUR_FRIGATE_HOST_IP:8555
+```
+
+Add `webrtc:` as a **sibling of your existing `go2rtc.streams` key** — not a second top-level `go2rtc:` block elsewhere in the file. YAML doesn't merge duplicate top-level keys; the last one silently wins, which would wipe out every camera restream you've already defined under `streams:`. Restart Frigate after saving.
+
+**Why this is needed:** without it, go2rtc has to guess its own reachable address for WebRTC's ICE negotiation, which frequently fails on a Docker host with more than one network interface — the connection succeeds, but no media ever actually reaches the browser. This is a Frigate/go2rtc configuration detail, not something WatchTower can work around in code.
+
+**If you get audio but no video:** that's a separate, unrelated issue — most browsers' WebRTC stack can negotiate H.265 but never actually decode it, so a camera whose stream happens to be H.265 will play audio while video silently never renders. WatchTower already works around this automatically by preferring an H.264 stream when one of the camera's configured ffmpeg inputs offers it — if a camera only has an H.265 source available at all, there's currently no fix short of changing that camera's stream encoding.
+
 ---
 
 ## 🔐 Login & Accounts
