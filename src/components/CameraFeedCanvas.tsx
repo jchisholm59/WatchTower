@@ -22,8 +22,12 @@ interface CameraFeedCanvasProps {
    *  still image on an interval, which uses one short-lived request at a
    *  time per tile instead of holding a socket open indefinitely, so a
    *  grid of any size stays under the connection cap. */
-  streamMode?: 'live' | 'snapshot';
+  streamMode?: 'live' | 'snapshot' | 'webrtc';
   snapshotIntervalMs?: number;
+  /** webrtc mode only — whether the video element itself is muted. Real
+   *  audio only exists on this path (MJPEG has no audio channel at all),
+   *  so this prop is meaningless for 'live'/'snapshot'. */
+  muted?: boolean;
 }
 
 export const CameraFeedCanvas: React.FC<CameraFeedCanvasProps> = ({
@@ -40,11 +44,14 @@ export const CameraFeedCanvas: React.FC<CameraFeedCanvasProps> = ({
   onObjectClick,
   streamMode = 'live',
   snapshotIntervalMs = 2000,
+  muted = true,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const [activeDetections, setActiveDetections] = useState<DetectedObject[]>([]);
   const [snapshotTick, setSnapshotTick] = useState(0);
+  const [webrtcError, setWebrtcError] = useState<string | null>(null);
 
   // 1. Identify if this is a real Frigate stream
   const isFrigate = Boolean(camera.frigate_url);
@@ -68,6 +75,102 @@ export const CameraFeedCanvas: React.FC<CameraFeedCanvasProps> = ({
     const interval = setInterval(() => setSnapshotTick((t) => t + 1), snapshotIntervalMs);
     return () => clearInterval(interval);
   }, [streamMode, isPaused, camera.isLiveStream, snapshotBaseUrl, snapshotIntervalMs]);
+
+  // 2c. WebRTC mode: real live audio+video via Frigate's embedded go2rtc,
+  // instead of the audio-less MJPEG image stream. Only sane to use where a
+  // single camera is mounted at a time (detail view) — unlike MJPEG this
+  // doesn't hit the browser's per-origin connection cap, but it's still a
+  // real peer connection per camera and not meant for a whole grid at once.
+  useEffect(() => {
+    if (streamMode !== 'webrtc' || isPaused || !camera.isLiveStream || !camera.frigate_url || !camera.go2rtcStreamName) {
+      return;
+    }
+
+    let cancelled = false;
+    let pc: RTCPeerConnection | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = async () => {
+      if (cancelled) return;
+      setWebrtcError(null);
+
+      pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+
+      pc.onconnectionstatechange = () => {
+        if (!pc || cancelled) return;
+        if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+          pc.close();
+          reconnectTimer = setTimeout(connect, 3000);
+        }
+      };
+
+      pc.ontrack = (event) => {
+        const videoEl = videoRef.current;
+        if (!videoEl) return;
+        if (videoEl.srcObject !== event.streams[0]) {
+          videoEl.srcObject = event.streams[0];
+        }
+        // The `autoplay` attribute doesn't reliably kick in when srcObject
+        // is assigned imperatively after mount (vs. present at initial
+        // render) — without this, tracks arrive live but the element just
+        // sits at readyState 0 forever, showing nothing.
+        videoEl.play().catch((err) => {
+          console.warn(`[WebRTC] Autoplay blocked for ${camera.id}, waiting for user interaction:`, err);
+        });
+      };
+
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        // Wait for ICE gathering so the offer we send is complete, capped
+        // so a slow/stuck gatherer can't hang the connection forever.
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 2500);
+          if (pc!.iceGatheringState === 'complete') {
+            clearTimeout(timer);
+            resolve();
+          } else {
+            pc!.onicegatheringstatechange = () => {
+              if (pc!.iceGatheringState === 'complete') {
+                clearTimeout(timer);
+                resolve();
+              }
+            };
+          }
+        });
+
+        if (cancelled || !pc || pc.signalingState === 'closed') return;
+
+        const url = `/api/frigate/proxy/webrtc?serverUrl=${encodeURIComponent(camera.frigate_url!)}&src=${encodeURIComponent(camera.go2rtcStreamName!)}`;
+        const response = await fetch(url, {
+          method: 'POST',
+          body: pc.localDescription!.sdp,
+          headers: { 'Content-Type': 'application/sdp' },
+        });
+        if (!response.ok) throw new Error(`Signaling failed: HTTP ${response.status}`);
+
+        const answerSdp = await response.text();
+        if (cancelled || !pc) return;
+        await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+      } catch (err: any) {
+        if (cancelled) return;
+        console.error(`[WebRTC] Connection failed for ${camera.id}:`, err);
+        setWebrtcError(err.message || 'Connection failed');
+      }
+    };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (pc) pc.close();
+    };
+  }, [streamMode, isPaused, camera.isLiveStream, camera.frigate_url, camera.go2rtcStreamName, camera.id]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -207,6 +310,28 @@ export const CameraFeedCanvas: React.FC<CameraFeedCanvasProps> = ({
             transformOrigin: 'center',
           }}
         />
+      )}
+
+      {/* WebRTC live video — the only path with real audio. */}
+      {streamMode === 'webrtc' && camera.isLiveStream && !isPaused && (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={muted}
+          className="max-w-full max-h-full w-auto h-auto object-contain"
+          style={{
+            transform: `scale(${zoom}) translate(${panX}px, ${panY}px)`,
+            transformOrigin: 'center',
+          }}
+        />
+      )}
+      {streamMode === 'webrtc' && webrtcError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-950/90 text-rose-400 text-xs font-mono p-4 text-center">
+          WebRTC connection failed: {webrtcError}
+          <br />
+          Retrying…
+        </div>
       )}
 
       {/* Overlay Canvas for bounding boxes and UI */}

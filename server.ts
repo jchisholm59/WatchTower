@@ -1615,6 +1615,24 @@ Return a JSON object with:
         const height = camConfig.detect?.height || 1080;
         const fps = camConfig.detect?.fps || 15;
 
+        // The go2rtc restream name to use for live WebRTC playback. Prefer
+        // whichever ffmpeg input is explicitly tagged with the 'audio'
+        // role (usually the higher-quality "record" stream) so the detail
+        // view actually gets sound — the 'detect' stream is often a
+        // lower-res feed with no audio need, and picking it silently would
+        // reproduce the exact "why is there no audio" problem this exists
+        // to fix. Falls back to whatever input exists, or `${camId}_1`
+        // (Frigate/go2rtc's own default naming) if config parsing finds nothing.
+        let go2rtcStreamName = '';
+        const inputs: any[] = camConfig.ffmpeg?.inputs || [];
+        const audioInput = inputs.find((inp) => Array.isArray(inp.roles) && inp.roles.includes('audio'));
+        const chosenInput = audioInput || inputs[0];
+        if (chosenInput?.path) {
+          const parts = String(chosenInput.path).split('/');
+          go2rtcStreamName = parts[parts.length - 1] || '';
+        }
+        if (!go2rtcStreamName) go2rtcStreamName = `${camId}_1`;
+
         // Parse zones if defined in Frigate YAML
         const zones = Object.entries(camConfig.zones || {}).map(([zoneName, zoneConfig]: [string, any], idx) => {
           let points: [number, number][] = [];
@@ -1673,6 +1691,7 @@ Return a JSON object with:
           liveImageUrl: snapshotProxyUrl,
           rtspUrl: `rtsp://${hostWithoutPort}:8554/${camId}`,
           frigate_url: baseUrl,
+          go2rtcStreamName,
           streamingMode: 'mjpeg' as const,
         };
       });
@@ -2393,6 +2412,39 @@ Return a JSON object with:
       console.error(`[MJPEG Proxy] Stream error for ${camera}: ${err.message}`);
       if (!res.headersSent) res.status(502).send(err.message);
     });
+  });
+
+  // go2rtc WebRTC signaling proxy — relays the browser's SDP offer to
+  // Frigate's embedded go2rtc instance (exposed at /api/go2rtc/webrtc on
+  // Frigate's own port) and returns its SDP answer, so the camera detail
+  // view can get real audio + smoother video without the per-camera MJPEG
+  // connection cost. Same cross-origin reasoning as every other
+  // /api/frigate/proxy/* route: the browser can't POST to the Frigate
+  // server directly without CORS.
+  app.post('/api/frigate/proxy/webrtc', express.text({ type: 'application/sdp' }), async (req, res) => {
+    const { serverUrl, src } = req.query;
+    const sdpOffer = req.body;
+    if (!serverUrl || !src || !sdpOffer) {
+      return res.status(400).send('Missing serverUrl, src, or SDP offer body');
+    }
+
+    try {
+      const go2rtcUrl = `${(serverUrl as string).replace(/\/$/, '')}/api/go2rtc/webrtc?src=${encodeURIComponent(src as string)}`;
+      const response = await fetch(go2rtcUrl, {
+        method: 'POST',
+        body: sdpOffer,
+        headers: { 'Content-Type': 'application/sdp' },
+      });
+      if (!response.ok) {
+        return res.status(response.status).send(`go2rtc returned HTTP ${response.status}`);
+      }
+      const sdpAnswer = await response.text();
+      res.setHeader('Content-Type', 'application/sdp');
+      res.send(sdpAnswer);
+    } catch (err: any) {
+      console.error('[WebRTC Proxy] Signaling failed:', err.message);
+      res.status(502).send(`WebRTC proxy failed: ${err.message}`);
+    }
   });
 
   // Proxy video clips (with HTTP 206 Partial Content range seeking for 10-second scrubber)

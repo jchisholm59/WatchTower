@@ -54,6 +54,10 @@ export interface CameraStream {
   mjpegStreamUrl?: string;
   rtspUrl?: string;
   go2rtcUrl?: string;
+  /** The go2rtc restream source name (e.g. "driveway_1") used for the
+   *  WebRTC `src=` query param — distinct from `id`, which is Frigate's
+   *  own camera name and not always the same string. */
+  go2rtcStreamName?: string;
   streamingMode?: 'mjpeg' | 'snapshot' | 'rtsp';
   serverId?: string;
   frigate_url?: string;

@@ -7,6 +7,8 @@ import {
   Copy,
   Check,
   CheckCircle2,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 
 interface CameraDetailModalProps {
@@ -25,6 +27,13 @@ export const CameraDetailModal: React.FC<CameraDetailModalProps> = ({
   const [showBoxes, setShowBoxes] = useState(true);
   const [snapshotSuccess, setSnapshotSuccess] = useState(false);
   const [copiedRtsp, setCopiedRtsp] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+
+  // Real audio only exists over WebRTC — MJPEG (the fallback below) has no
+  // audio channel at all. Falls back to the old MJPEG path for simulated
+  // cameras, or a real camera whose list was fetched before this feature
+  // existed (hit "Resync Feeds" to pick up go2rtcStreamName).
+  const useWebrtc = Boolean(camera.frigate_url && camera.go2rtcStreamName);
 
   const handleCopyRtsp = () => {
     if (camera.rtspUrl) {
@@ -125,7 +134,9 @@ export const CameraDetailModal: React.FC<CameraDetailModalProps> = ({
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Live Feed: Continuous MJPEG (15-25 FPS via Port 5000)
+              {useWebrtc
+                ? 'Live Feed: WebRTC via go2rtc (audio enabled)'
+                : 'Live Feed: Continuous MJPEG (15-25 FPS via Port 5000, no audio)'}
             </span>
             <span className="text-slate-700">|</span>
             <span className="text-slate-400 font-medium">
@@ -172,6 +183,8 @@ export const CameraDetailModal: React.FC<CameraDetailModalProps> = ({
               showZones={showZones}
               showMotionMasks={showMasks}
               showHud={true}
+              streamMode={useWebrtc ? 'webrtc' : 'live'}
+              muted={isMuted}
               className="w-auto h-auto max-w-full max-h-full aspect-video shadow-2xl rounded-lg border border-slate-800 bg-zinc-900 pointer-events-auto"
             />
           </div>
@@ -188,6 +201,20 @@ export const CameraDetailModal: React.FC<CameraDetailModalProps> = ({
         {/* Footer info & toggle bar */}
         <div className="p-4 bg-slate-900/90 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex flex-wrap items-center gap-2">
+            {useWebrtc && (
+              <button
+                onClick={() => setIsMuted(!isMuted)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] uppercase tracking-wider font-bold transition-colors ${
+                  isMuted
+                    ? 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
+                    : 'bg-white text-slate-950 border-white font-black'
+                }`}
+                title={isMuted ? 'Unmute audio' : 'Mute audio'}
+              >
+                {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                <span>{isMuted ? 'Muted' : 'Audio ON'}</span>
+              </button>
+            )}
             <button
               onClick={() => setShowBoxes(!showBoxes)}
               className={`px-3 py-1.5 rounded-xl border text-[10px] uppercase tracking-wider font-bold transition-colors ${
