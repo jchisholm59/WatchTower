@@ -1610,26 +1610,67 @@ Return a JSON object with:
 
       const config = await configResp.json();
       const rawCameras = config.cameras || {};
+
+      // Live codec info per go2rtc stream, used below to pick a WebRTC-safe
+      // source per camera — Frigate's static YAML 'audio' role tag tells us
+      // nothing about the actual video codec, and some cameras' "record"
+      // stream (the one usually tagged with audio) is H.265, which most
+      // browsers' WebRTC stack can negotiate but then never actually
+      // decode: the connection succeeds, audio plays, video just never
+      // renders a frame. Confirmed live: porch/driveway's audio-tagged
+      // stream is H.265 while their other stream is H.264 with audio too.
+      let go2rtcStreams: Record<string, any> = {};
+      try {
+        const streamsResp = await fetch(`${baseUrl}/api/go2rtc/streams`, { headers });
+        if (streamsResp.ok) go2rtcStreams = await streamsResp.json();
+      } catch (err) {
+        console.warn('[Proxy] Could not fetch go2rtc stream codec info:', err);
+      }
+
       const detectedCameras = Object.entries(rawCameras).map(([camId, camConfig]: [string, any]) => {
         const width = camConfig.detect?.width || 1920;
         const height = camConfig.detect?.height || 1080;
         const fps = camConfig.detect?.fps || 15;
 
-        // The go2rtc restream name to use for live WebRTC playback. Prefer
-        // whichever ffmpeg input is explicitly tagged with the 'audio'
-        // role (usually the higher-quality "record" stream) so the detail
-        // view actually gets sound — the 'detect' stream is often a
-        // lower-res feed with no audio need, and picking it silently would
-        // reproduce the exact "why is there no audio" problem this exists
-        // to fix. Falls back to whatever input exists, or `${camId}_1`
-        // (Frigate/go2rtc's own default naming) if config parsing finds nothing.
-        let go2rtcStreamName = '';
+        // The go2rtc restream name to use for live WebRTC playback. Score
+        // every ffmpeg input's go2rtc stream name by (a) not being H.265
+        // (WebRTC-incompatible in practice) and (b) actually carrying
+        // audio, and pick the best-scoring one — not just whichever input
+        // Frigate's YAML happens to tag with the 'audio' role, since that
+        // tag doesn't reflect the real codec and (as seen live) isn't even
+        // reliable about which streams actually carry audio.
         const inputs: any[] = camConfig.ffmpeg?.inputs || [];
-        const audioInput = inputs.find((inp) => Array.isArray(inp.roles) && inp.roles.includes('audio'));
-        const chosenInput = audioInput || inputs[0];
-        if (chosenInput?.path) {
-          const parts = String(chosenInput.path).split('/');
-          go2rtcStreamName = parts[parts.length - 1] || '';
+        const candidateNames = inputs
+          .map((inp) => {
+            if (!inp?.path) return '';
+            const parts = String(inp.path).split('/');
+            return parts[parts.length - 1] || '';
+          })
+          .filter(Boolean);
+
+        let go2rtcStreamName = '';
+        if (candidateNames.length > 0 && Object.keys(go2rtcStreams).length > 0) {
+          let bestScore = -1;
+          for (const name of candidateNames) {
+            const medias: string[] = go2rtcStreams[name]?.producers?.[0]?.medias || [];
+            const hasAudio = medias.some((m) => m.startsWith('audio'));
+            const isHevc = medias.some((m) => m.startsWith('video') && /H\.?265|HEVC/i.test(m));
+            const score = (isHevc ? 0 : 2) + (hasAudio ? 1 : 0);
+            if (score > bestScore) {
+              bestScore = score;
+              go2rtcStreamName = name;
+            }
+          }
+        }
+        if (!go2rtcStreamName) {
+          // go2rtc's codec info wasn't available (e.g. it errored above) —
+          // fall back to the old heuristic rather than picking nothing.
+          const audioInput = inputs.find((inp) => Array.isArray(inp.roles) && inp.roles.includes('audio'));
+          const chosenInput = audioInput || inputs[0];
+          if (chosenInput?.path) {
+            const parts = String(chosenInput.path).split('/');
+            go2rtcStreamName = parts[parts.length - 1] || '';
+          }
         }
         if (!go2rtcStreamName) go2rtcStreamName = `${camId}_1`;
 
