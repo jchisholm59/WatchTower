@@ -4,6 +4,44 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-09-13 — Live audio in the camera detail view (WebRTC via go2rtc)
+
+Before deploying (commit `86d5325`), a backup point was made of the last-known-good build (commit `908cd87` — Live grid connection-limit fix, running live and stable at the time).
+
+**Git tag:** [`pre-webrtc-audio-2026-09-13`](https://github.com/jchisholm59/WatchTower/tree/pre-webrtc-audio-2026-09-13) at commit `908cd87`
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-webrtc-audio-20260913-105638/`
+
+User noticed the "Inspect & Detail" expanded camera view had no audio and asked if that was a regression — it wasn't: that view (and the grid) has always streamed MJPEG, which has no audio channel at all, so there was never audio there to lose. Built a real fix: the detail view now uses Frigate's embedded go2rtc WebRTC output instead (new `/api/frigate/proxy/webrtc` SDP signaling proxy in server.ts, a `streamMode="webrtc"` path in `CameraFeedCanvas` using a real `RTCPeerConnection`, and a mute/unmute control in `CameraDetailModal`). The grid and Zone Studio still use MJPEG/snapshot mode — WebRTC is deliberately only used where one camera is mounted at a time.
+
+**This also required a companion change on the Frigate side**, not just WatchTower: go2rtc couldn't reliably advertise its own reachable address for WebRTC's ICE negotiation on this multi-homed Docker host (NUC has 4+ network interfaces), so media was being sent but never reaching the browser (confirmed via go2rtc's own stream stats — packets sent, high drop rate, video element stuck at `readyState 0`). Fixed by adding an explicit `go2rtc.webrtc.candidates: [192.168.2.210:8555]` block to `~/frigate/config/config.yml`, as a **sibling of the existing `go2rtc.streams` key** (not a new top-level `go2rtc:` block — YAML doesn't merge duplicate top-level keys, and a naive append would have silently wiped out all 19 configured camera restreams). Frigate's config was backed up first to `~/frigate/config/config.yml.pre-webrtc-candidates-20260913-105405` before editing, and Frigate was restarted via `docker restart frigate` to apply it.
+
+Verified live against the real 7-camera server: after the go2rtc config fix, confirmed real audio+video on two cameras with different go2rtc stream naming (`porch_1`, `reo-yard_2`) via direct track/`readyState` inspection (not just visually), confirmed the mute toggle actually mutes the `<video>` element, and confirmed WebRTC sessions cleanly close (0 lingering `webrtc/whep` consumers in go2rtc) when the detail modal is dismissed.
+
+### To revert
+
+**WatchTower code — fast path (restores the exact build that was running, no rebuild, back in seconds):**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-webrtc-audio-20260913-105638 dist && pm2 restart watchtower"
+```
+
+**WatchTower code — full path (also rolls back the source tree to that commit):**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-webrtc-audio-2026-09-13 -- server.ts src/components/CameraDetailModal.tsx src/components/CameraFeedCanvas.tsx src/types.ts && npm run build && pm2 restart watchtower"
+```
+
+**Frigate config (only needed if the go2rtc.webrtc.candidates change itself causes a problem — it's harmless to leave in place even if the WatchTower code above is rolled back):**
+```bash
+ssh 192.168.2.210 "cp ~/frigate/config/config.yml.pre-webrtc-candidates-20260913-105405 ~/frigate/config/config.yml && docker restart frigate"
+```
+
+After either WatchTower revert, confirm it came back up:
+```bash
+curl -s http://192.168.2.210:8100/api/birds/status
+```
+
+---
+
 ## 2026-09-13 — Fix black camera tiles past the 5th camera in Live Streams grid
 
 Before deploying (commit `908cd87`), a backup point was made of the last-known-good build (commit `ad89215` — BirdNET retention-window fix, running live and stable at the time).
