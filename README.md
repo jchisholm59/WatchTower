@@ -253,6 +253,70 @@ The **Weather** tab refreshes every 10 minutes, matching the server-side cache.
 
 ---
 
+## 📥 Sorting Alerts in Gmail (Optional)
+
+Every alert email WatchTower sends uses a predictable subject line: `🚨 [Frigate Alert] <OBJECT> detected on <camera> (<LEVEL> Threat)`. That's enough structure to auto-sort alerts out of your inbox into labels by detected object type, without touching the app itself — all Gmail-side.
+
+**Label structure:** a parent `Frigate` label (catches every alert, archived out of the inbox) plus three sub-labels: `Frigate/Car`, `Frigate/Person`, `Frigate/Bird`.
+
+**Known limitation — bird detection is a best-effort exclusion list, not a positive match.** Car and Person alerts (from Frigate's own object detection) literally contain the words "CAR"/"PERSON" in the subject, so those are easy exact matches. Bird alerts, via the BirdNET-Go integration above, instead carry a specific species name (e.g. "BARRED OWL", "BLACK-CAPPED CHICKADEE") rather than the word "bird" — and the same yard microphone/camera can also pick up non-bird wildlife (coyote, frog, and presumably others). So the Bird rule works by exclusion: *anything that isn't Car, Person, or a known non-bird animal* is assumed to be a bird. If a new animal type starts showing up and getting mis-filed into `Frigate/Bird`, add it to the exclusion list below and re-import.
+
+**Setup — Gmail supports bulk filter import**, which is much less painful than the "Create filter" dialog for queries this long:
+1. Save the XML below as a file (e.g. `frigate-gmail-filters.xml`).
+2. In Gmail: gear icon → **See all settings** → **Filters and Blocked Addresses** tab → scroll down → **Import filters**.
+3. Choose the file, review the preview Gmail shows, then **Create filters**.
+
+```xml
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns='http://www.w3.org/2005/Atom' xmlns:apps='http://schemas.google.com/apps/2006'>
+  <title>Mail Filters</title>
+
+  <!-- 1. Catch-all: every Frigate alert gets the Frigate label and is archived out of the inbox -->
+  <entry>
+    <category term='filter'></category>
+    <title>Mail Filter</title>
+    <content></content>
+    <apps:property name='hasTheWord' value='subject:("Frigate Alert")'/>
+    <apps:property name='label' value='Frigate'/>
+    <apps:property name='shouldArchive' value='true'/>
+  </entry>
+
+  <!-- 2. Car alerts -->
+  <entry>
+    <category term='filter'></category>
+    <title>Mail Filter</title>
+    <content></content>
+    <apps:property name='hasTheWord' value='subject:("Frigate Alert") subject:(CAR)'/>
+    <apps:property name='label' value='Frigate/Car'/>
+  </entry>
+
+  <!-- 3. Person alerts -->
+  <entry>
+    <category term='filter'></category>
+    <title>Mail Filter</title>
+    <content></content>
+    <apps:property name='hasTheWord' value='subject:("Frigate Alert") subject:(PERSON)'/>
+    <apps:property name='label' value='Frigate/Person'/>
+  </entry>
+
+  <!-- 4. Bird alerts: everything that isn't Car/Person/a known non-bird animal.
+       Add more -subject:(...) exclusions here if a new non-bird animal type
+       shows up (e.g. possum, opossum), then re-import. -->
+  <entry>
+    <category term='filter'></category>
+    <title>Mail Filter</title>
+    <content></content>
+    <apps:property name='hasTheWord' value='subject:("Frigate Alert") -subject:(CAR) -subject:(PERSON) -subject:(COYOTE) -subject:(DOG) -subject:(CAT) -subject:("GREEN FROG") -subject:(FROG) -subject:(RACCOON) -subject:(DEER) -subject:(FOX) -subject:(SQUIRREL) -subject:(RABBIT) -subject:(SKUNK) -subject:(CHIPMUNK) -subject:(GROUNDHOG) -subject:(MOOSE) -subject:(BEAR) -subject:(MOUSE) -subject:(RAT) -subject:(BAT) -subject:(SNAKE) -subject:(TURTLE)'/>
+    <apps:property name='label' value='Frigate/Bird'/>
+  </entry>
+
+</feed>
+```
+
+Gmail matches/creates labels by name on import, so re-importing after editing the exclusion list won't create duplicate labels — it just updates the filter's match criteria.
+
+---
+
 ## 🔒 Security & Privacy
 *   **Login Required:** See [Login & Accounts](#-login--accounts) above — every route requires a signed-in session, with admin/standard roles separating "use the app" from "reconfigure the app."
 *   **Local First:** Your passwords, integration credentials, and account list are stored locally in `~/.frigate-guardian` (or `/app/data` under Docker) and never uploaded to the cloud.
