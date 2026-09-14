@@ -4,6 +4,37 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-09-14 — Configurable minimum-confidence threshold for BirdNET daily alerts
+
+Before deploying (commit `c1500b3`), a backup point was made of the last-known-good build (commit `e33f489` — Delivery Log status label cleanup, running live and stable at the time).
+
+**Git tag:** [`pre-birdnet-confidence-2026-09-14`](https://github.com/jchisholm59/WatchTower/tree/pre-birdnet-confidence-2026-09-14) at commit `e33f489`
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-birdnet-confidence-20260914-090000/`
+
+User's neighbor's Shih Tzu keeps getting misidentified by BirdNET-Go as a wild turkey or (more often) a coyote, triggering the daily first-sighting alert every time. The alert fired on any detection above a hardcoded 0.6 confidence; misidentifications like this tend to cluster at lower confidence than genuine IDs, so a fixed threshold let them through indiscriminately. Added `BirdNetConfig.minAlertConfidence` (0-1, unset defaults to 0.6 — unchanged behavior) and a "Minimum Confidence to Alert" slider (10-95%, 5% steps) in the BirdNET-Go settings tab. This is separate from the Birds tab's display-only "Filter Strength" slider, which filters what's shown, not what alerts.
+
+Verified live (locally, pre-deploy): settings POST round-trips `minAlertConfidence` correctly; slider renders at the saved value (confirmed 75% via `read_page`/screenshot) with correct label; `tsc --noEmit` and `npm run build` both clean. Post-deploy: confirmed `minAlertConfidence` string present in the running `dist/server.cjs` on the NUC, pm2 restarted cleanly with settings/logs/MQTT/BirdNET all reloading without error, and a real live BirdNET detection (Blue Jay, 38%) flowed through afterward with no errors in `pm2 logs`.
+
+### To revert
+
+**Fast path — restores the exact build that was running, no rebuild, back in seconds:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-birdnet-confidence-20260914-090000 dist && pm2 restart watchtower"
+```
+
+**Full path — also rolls back the source tree to that commit:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-birdnet-confidence-2026-09-14 -- server.ts src/types.ts src/components/NotificationSettingsView.tsx && npm run build && pm2 restart watchtower"
+```
+
+After either, confirm it came back up:
+```bash
+curl -s http://192.168.2.210:8100/api/birds/status
+```
+
+---
+
 ## 2026-09-14 — Accurate Delivery Log status labels (and a free type-error fixup)
 
 Before deploying (commit `e33f489`), a backup point was made of the last-known-good build (commit `b152252` — Known Vehicles + Zones Studio, running live and stable at the time).
