@@ -303,7 +303,7 @@ The one wrinkle: that same yard microphone occasionally picks up other vocalizin
 
   <!-- 4. Bird alerts: anchored on the ESP32-C camera name (BirdNET-Go's yard mic),
        minus the non-bird sounds BirdNET-Go's audio classifier realistically
-       vocalize-IDs (coyote, frog, bat, squirrel, chipmunk chatter) -- not a
+       vocalize-IDs (coyote, frog, bat, squirrel, chipmunk chatter), not a
        generic wildlife-camera list, since this is audio classification, not
        a trail cam. Add more -subject:(...) exclusions if a new non-bird
        species type shows up, then re-import. -->
