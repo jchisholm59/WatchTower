@@ -2042,7 +2042,27 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
                     ? 'text-red-400 border-red-500/30 bg-red-950/30'
                     : log.channel === 'slack'
                     ? 'text-emerald-400 border-emerald-500/30 bg-emerald-950/30'
-                    : 'text-indigo-400 border-indigo-500/30 bg-indigo-950/30';
+                    : log.channel === 'discord'
+                    ? 'text-indigo-400 border-indigo-500/30 bg-indigo-950/30'
+                    : 'text-slate-400 border-slate-700 bg-slate-800/50'; // 'all' — a filter-level entry, not one specific channel
+
+                // sent = actually delivered. failed = a real error, worth
+                // noticing. skipped = correctly filtered on purpose (a
+                // zone/known-vehicle/label match etc.) — not an error, so
+                // it shouldn't look alarming. received/dispatching are
+                // just informational breadcrumbs for an event still in
+                // flight. simulated = no real credentials configured, so
+                // this was a dry run rather than an actual send.
+                const statusColor =
+                  log.status === 'sent'
+                    ? 'text-emerald-400'
+                    : log.status === 'failed'
+                    ? 'text-red-400'
+                    : log.status === 'skipped'
+                    ? 'text-slate-400'
+                    : log.status === 'simulated'
+                    ? 'text-amber-400'
+                    : 'text-sky-400'; // received / dispatching
 
                 return (
                   <div
@@ -2071,15 +2091,7 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div
-                        className={`text-xs uppercase font-black tracking-wider ${
-                          log.status === 'sent'
-                            ? 'text-emerald-400'
-                            : log.status === 'simulated'
-                            ? 'text-amber-400'
-                            : 'text-red-400'
-                        }`}
-                      >
+                      <div className={`text-xs uppercase font-black tracking-wider ${statusColor}`}>
                         {log.status}
                       </div>
                       <div className="text-xs text-slate-500 mt-0.5">

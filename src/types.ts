@@ -431,8 +431,22 @@ export interface BirdSighting {
 export interface NotificationLog {
   id: string;
   timestamp: number;
-  channel: 'gmail' | 'slack' | 'discord';
-  status: 'sent' | 'failed' | 'simulated';
+  /** 'all' is used for filter-level entries (a skip decision, or an event
+   *  breadcrumb) that aren't about one specific channel. */
+  channel: 'gmail' | 'slack' | 'discord' | 'all';
+  status:
+    | 'sent'
+    | 'failed'
+    /** Passed every filter check but wasn't attempted on a channel — that
+     *  channel isn't enabled/configured, distinct from a real send failure. */
+    | 'skipped'
+    /** A real MQTT event arrived — informational, not a dispatch outcome. */
+    | 'received'
+    /** Passed all filters; about to attempt each enabled channel. */
+    | 'dispatching'
+    /** The channel isn't configured with real credentials (e.g. no SMTP
+     *  set up), so sending was a dry run rather than a real delivery. */
+    | 'simulated';
   eventId?: string;
   camera: string;
   label: string;

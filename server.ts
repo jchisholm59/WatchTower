@@ -2048,7 +2048,7 @@ Return a JSON object with:
             if (eventType === 'new' || eventType === 'end') {
               console.log(`[MQTT] Event ${eventType}: ${evtData.id} on ${evtData.camera}`);
               recordNotificationLog({
-                channel: 'all', status: 'simulated', camera: evtData.camera || 'unknown', label: 'mqtt_rx',
+                channel: 'all', status: 'received', camera: evtData.camera || 'unknown', label: 'mqtt_rx',
                 message: `MQTT Event ${eventType.toUpperCase()} received for ${evtData.label}`,
               });
             }
@@ -2128,7 +2128,7 @@ Return a JSON object with:
 
               if (isGmail || isSlack || isDiscord) {
                 recordNotificationLog({
-                  channel: 'all', status: 'simulated', eventId: normalizedEvent.id, camera: normalizedEvent.camera, label: normalizedEvent.label,
+                  channel: 'all', status: 'dispatching', eventId: normalizedEvent.id, camera: normalizedEvent.camera, label: normalizedEvent.label,
                   message: `Attempting background dispatch for ${normalizedEvent.label}. Importance: ${normalizedEvent.importance}`,
                 });
                 dispatchNotification(normalizedEvent, persistentSettings).then(result => {
@@ -2606,8 +2606,20 @@ Return a JSON object with:
   interface NotificationLogRecord {
     id: string;
     timestamp: number;
-    channel: 'gmail' | 'slack' | 'discord';
-    status: 'sent' | 'failed' | 'simulated';
+    // 'all' is used for filter-level entries (a skip decision, or an event
+    // breadcrumb) that aren't about one specific channel.
+    channel: 'gmail' | 'slack' | 'discord' | 'all';
+    status:
+      // Passed every filter check but wasn't attempted on a channel — that
+      // channel isn't enabled/configured, distinct from a real send failure.
+      | 'sent' | 'failed' | 'skipped'
+      // A real MQTT event arrived — informational, not a dispatch outcome.
+      | 'received'
+      // Passed all filters; about to attempt each enabled channel.
+      | 'dispatching'
+      // The channel isn't configured with real credentials (e.g. no SMTP
+      // set up), so sending was a dry run rather than a real delivery.
+      | 'simulated';
     eventId?: string;
     camera: string;
     label: string;
