@@ -13,6 +13,9 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
   Key,
   Globe,
   Radio,
@@ -126,6 +129,22 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
   // Logs state
   const [logs, setLogs] = useState<NotificationLog[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [totalStoredLogs, setTotalStoredLogs] = useState(0);
+  // Which local day is currently shown — logs are now kept on disk for 30
+  // days (was an in-memory-only 100-entry cap that reset on every restart,
+  // so there was nothing to go back to). Defaults to today; Previous/Next
+  // Day pages through history a full day at a time.
+  const [logSelectedDate, setLogSelectedDate] = useState(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+
+  const isLogDateToday = (() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return logSelectedDate.getTime() === today.getTime();
+  })();
 
   // Sync with prop when changed externally
   useEffect(() => {
@@ -133,14 +152,21 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
   }, [settings]);
 
   // Load logs on mount and when logs tab is clicked
-  const fetchLogs = async () => {
+  const fetchLogs = async (forDate: Date = logSelectedDate) => {
     setIsLoadingLogs(true);
     try {
-      const resp = await fetch('/api/notifications/logs');
+      const dayStart = new Date(forDate);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      const resp = await fetch(`/api/notifications/logs?start=${dayStart.getTime()}&end=${dayEnd.getTime() - 1}`);
       if (resp.ok) {
         const data = await resp.json();
         if (data.logs) {
           setLogs(data.logs);
+        }
+        if (typeof data.totalStored === 'number') {
+          setTotalStoredLogs(data.totalStored);
         }
       }
     } catch (e) {
@@ -150,16 +176,32 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
     }
   };
 
+  const handleShiftLogDay = (deltaDays: number) => {
+    const next = new Date(logSelectedDate);
+    next.setDate(next.getDate() + deltaDays);
+    setLogSelectedDate(next);
+    fetchLogs(next);
+  };
+
+  const handleJumpToToday = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    setLogSelectedDate(today);
+    fetchLogs(today);
+  };
+
   useEffect(() => {
     if (activeChannelTab === 'logs') {
       fetchLogs();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChannelTab]);
 
   const handleClearLogs = async () => {
     try {
       await fetch('/api/notifications/clear-logs', { method: 'POST' });
       setLogs([]);
+      setTotalStoredLogs(0);
     } catch (e) {
       console.warn('Error clearing logs:', e);
     }
@@ -1965,7 +2007,7 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={fetchLogs}
+                onClick={() => fetchLogs()}
                 disabled={isLoadingLogs}
                 className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors"
                 title="Refresh logs"
@@ -1982,9 +2024,54 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
             </div>
           </div>
 
+          {/* Day navigator — logs are persisted 30 days now instead of
+              resetting on every restart, so paging back a day at a time is
+              actually meaningful. */}
+          <div className="flex items-center justify-between gap-3 pb-1">
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => handleShiftLogDay(-1)}
+                disabled={isLoadingLogs}
+                className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors disabled:opacity-40"
+                title="Previous day"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-bold text-white min-w-[9rem] justify-center">
+                <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                <span>
+                  {isLogDateToday
+                    ? 'Today'
+                    : logSelectedDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                </span>
+              </div>
+              <button
+                onClick={() => handleShiftLogDay(1)}
+                disabled={isLoadingLogs || isLogDateToday}
+                className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors disabled:opacity-40"
+                title="Next day"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              {!isLogDateToday && (
+                <button
+                  onClick={handleJumpToToday}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-[10px] font-bold uppercase tracking-wider transition-colors"
+                >
+                  Jump to Today
+                </button>
+              )}
+            </div>
+            <span className="text-[10px] text-slate-500 font-mono">
+              {logs.length} shown · {totalStoredLogs} stored (30-day history)
+            </span>
+          </div>
+
           {logs.length === 0 ? (
             <div className="py-8 text-center text-slate-500 font-mono text-xs">
-              No notifications dispatched yet. Try sending a test alert or trigger an event.
+              {isLogDateToday
+                ? 'No notifications dispatched yet today. Try sending a test alert or trigger an event.'
+                : 'No notifications were dispatched on this day.'}
             </div>
           ) : (
             <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1 font-mono">

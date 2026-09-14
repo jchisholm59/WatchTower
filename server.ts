@@ -329,6 +329,7 @@ const MQTT_CONFIG_FILE = path.join(DATA_DIR, 'mqtt_config.json');
 const BIRD_SIGHTINGS_FILE = path.join(DATA_DIR, 'bird_sightings.json');
 const SERVERS_FILE = path.join(DATA_DIR, 'frigate_servers.json');
 const BIRD_ALERT_STATE_FILE = path.join(DATA_DIR, 'bird_alert_state.json');
+const NOTIFICATION_LOGS_FILE = path.join(DATA_DIR, 'notification_logs.json');
 
 // Signs the login session cookie. Generated once and persisted outside the
 // repo (in DATA_DIR, same as everything else here) so sessions survive a
@@ -2611,7 +2612,30 @@ Return a JSON object with:
     message: string;
     details?: string;
   }
-  const notificationLogs: NotificationLogRecord[] = [];
+  // Persisted to disk (and pruned by age, not count) rather than the old
+  // in-memory-only 100-entry cap — that reset to empty on every pm2
+  // restart, so the "audit trail" was effectively only ever as deep as
+  // however long it had been since the last deploy/crash/reboot.
+  const NOTIFICATION_LOGS_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+  let notificationLogs: NotificationLogRecord[] = [];
+  try {
+    if (fs.existsSync(NOTIFICATION_LOGS_FILE)) {
+      notificationLogs = JSON.parse(fs.readFileSync(NOTIFICATION_LOGS_FILE, 'utf-8'));
+      console.log(`[Notifications] Loaded ${notificationLogs.length} log entries from disk`);
+    }
+  } catch (err) {
+    console.error('[Notifications] Failed to load persisted logs:', err);
+  }
+
+  function saveNotificationLogs() {
+    try {
+      const cutoff = Date.now() - NOTIFICATION_LOGS_RETENTION_MS;
+      notificationLogs = notificationLogs.filter((l) => l.timestamp >= cutoff);
+      fs.writeFileSync(NOTIFICATION_LOGS_FILE, JSON.stringify(notificationLogs, null, 2));
+    } catch (err) {
+      console.error('[Notifications] Failed to persist logs:', err);
+    }
+  }
 
   function recordNotificationLog(log: Omit<NotificationLogRecord, 'id' | 'timestamp'>) {
     const entry: NotificationLogRecord = {
@@ -2620,9 +2644,7 @@ Return a JSON object with:
       ...log,
     };
     notificationLogs.unshift(entry);
-    if (notificationLogs.length > 100) {
-      notificationLogs.pop();
-    }
+    saveNotificationLogs();
     return entry;
   }
 
@@ -3317,17 +3339,44 @@ Return a JSON object with:
     res.json(result);
   });
 
-  // Get Notification History Logs
-  app.get('/api/notifications/logs', (_req, res) => {
+  // Get Notification History Logs.
+  // ?start=<epoch ms>&end=<epoch ms> narrows to an explicit window — used
+  // by the UI's day-by-day navigator (send a local day's midnight-to-midnight
+  // bounds to page back through history).
+  // ?days=N is a simpler "last N days from now" shorthand.
+  // ?limit=N caps how many entries come back (most recent first), a
+  // payload-size safety net independent of the other filters.
+  // Omit all three for the full retained history (currently 30 days).
+  app.get('/api/notifications/logs', (req, res) => {
+    let filtered = notificationLogs;
+
+    const start = Number(req.query.start);
+    const end = Number(req.query.end);
+    if (Number.isFinite(start)) filtered = filtered.filter((l) => l.timestamp >= start);
+    if (Number.isFinite(end)) filtered = filtered.filter((l) => l.timestamp <= end);
+
+    const days = Number(req.query.days);
+    if (Number.isFinite(days) && days > 0) {
+      const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+      filtered = filtered.filter((l) => l.timestamp >= cutoff);
+    }
+
+    const limit = Number(req.query.limit);
+    if (Number.isFinite(limit) && limit > 0) {
+      filtered = filtered.slice(0, limit);
+    }
+
     return res.json({
       success: true,
-      logs: notificationLogs,
+      logs: filtered,
+      totalStored: notificationLogs.length,
     });
   });
 
   // Clear Notification Logs
   app.post('/api/notifications/clear-logs', (_req, res) => {
     notificationLogs.length = 0;
+    saveNotificationLogs();
     return res.json({ success: true, message: 'Notification logs cleared' });
   });
 
