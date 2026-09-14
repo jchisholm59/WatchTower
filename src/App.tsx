@@ -4,8 +4,6 @@ import {
   FrigateEvent,
   ActiveTab,
   SystemTelemetryData,
-  ZonePolygon,
-  MotionMask,
   DetectedObject,
   FrigateServerConfig,
   NotificationSettings,
@@ -16,7 +14,7 @@ import { INITIAL_CAMERAS, INITIAL_EVENTS, INITIAL_TELEMETRY } from './mockData';
 import { Navbar } from './components/Navbar';
 import { LiveGrid } from './components/LiveGrid';
 import { EventsReview } from './components/EventsReview';
-import { ZoneEditor } from './components/ZoneEditor';
+import { ZonesStudioView } from './components/ZonesStudioView';
 import { BirdSightingsView } from './components/BirdSightingsView';
 import { TideView } from './components/TideView';
 import { FlightsView } from './components/FlightsView';
@@ -651,17 +649,6 @@ function Dashboard({
     );
   };
 
-  // Save Zones & Masks from Studio
-  const handleSaveZones = (
-    cameraId: string,
-    zones: ZonePolygon[],
-    motionMasks: MotionMask[]
-  ) => {
-    setCameras((prev) =>
-      prev.map((c) => (c.id === cameraId ? { ...c, zones, motionMasks } : c))
-    );
-  };
-
   // Restart Frigate Engine simulation
   const handleRestartEngine = () => {
     setTelemetry((prev) => ({
@@ -851,8 +838,12 @@ function Dashboard({
           />
         )}
 
-        {activeTab === 'zones' && (
-          <ZoneEditor cameras={displayedCameras} onSaveZones={handleSaveZones} />
+        {activeTab === 'zones' && currentUser.role === 'admin' && (
+          <ZonesStudioView
+            settings={notificationSettings}
+            onUpdateSettings={setNotificationSettings}
+            availableCameras={displayedCameras.map((c) => ({ id: c.id, name: c.name, liveImageUrl: c.liveImageUrl }))}
+          />
         )}
 
         {activeTab === 'config' && (

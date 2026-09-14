@@ -21,24 +21,39 @@ If you find WatchTower useful, consider starring and supporting those projects d
 
 ## 🎯 Finally Fixes Frigate's Parked-Car Problem
 
-Your own car re-triggering as a "new" detection every time light or shadow shifts is one of the most-discussed unsolved annoyances in the Frigate community — zones, masks, object filters inside Frigate itself don't reliably fix it long-term. WatchTower doesn't try to fix it in Frigate. It sidesteps the problem entirely.
+Your own car re-triggering as a "new" detection every time light or shadow shifts is one of the most-discussed unsolved annoyances in the Frigate community — zones, masks, object filters inside Frigate itself don't reliably fix it long-term. WatchTower doesn't try to fix it in Frigate. It sidesteps the problem entirely, with two independent mechanisms you can use together — one filters by **where** a detection is, the other by **what Frigate recognizes it as**. Both live in the **Zones Studio** tab.
 
-**Exclusion Zones** let you draw a region directly on a camera's real live frame — around a car in the driveway, a flag, a tree branch, anything that keeps falsely triggering. Any detection centered inside that zone is silently skipped *before* a notification goes out, independent of whatever Frigate itself concludes about the object's motion. The event still records and still shows up in Review — you just stop hearing about it.
+### Exclusion Zones — filter by location
+
+Draw a region directly on a camera's real live frame — around a car in the driveway, a flag, a tree branch, anything that keeps falsely triggering. Any detection centered inside that zone is silently skipped *before* a notification goes out, independent of whatever Frigate itself concludes about the object's motion. The event still records and still shows up in Review — you just stop hearing about it.
 
 *   **Draw, drag, done:** click to place vertices, drag any vertex to reshape, drag inside the shape to move the whole zone — no redrawing from scratch when the car parks a few feet differently.
 *   **Per camera, unlimited zones:** cover more than one trouble spot per camera, any polygon shape, any number of points.
 *   **See it, don't guess:** the Snapshot Viewer and 10-Second Playback windows both show your configured zones overlaid on the real footage, so you can check at a glance whether a past event would have been filtered.
 
-Find it in **Notifications → Alert Rules → Exclusion Zones**.
+**The tradeoff to know about:** a zone is location-based, not identity-based. If your vehicle needs a large or awkwardly-placed zone to stay covered — say, one that also swallows the entrance to your driveway — an actual unrecognized vehicle parked in that same spot goes just as unnoticed as your own car does. A wide enough zone can trade a false-positive annoyance for a real blind spot. That's exactly what Known Vehicles is for.
+
+### Known Vehicles — filter by identity
+
+If you're running **Frigate+** with a custom-trained sub-label classifier (Frigate+'s own feature for recognizing a *specific* vehicle by name, not just "car" generically — see [Frigate+'s docs](https://frigate.video/plus)), WatchTower can use that classification directly: list a sub-label name (e.g. `Tundra`, `Rav4`) against a camera, and any `car` detection Frigate identifies as that specific vehicle is skipped — regardless of where in the frame it is.
+
+Because this suppresses by *identity* rather than *location*, it doesn't create the blind spot a large exclusion zone can: your own recognized vehicle is silently filtered no matter where it's parked that day, while an unrecognized car — or a stranger's truck — sitting in that exact same spot still alerts normally. No zone to draw, no region of the frame ever goes dark.
+
+*   **Per camera, unlimited vehicles:** list every vehicle you have a trained classifier for, per camera.
+*   **Exact match required:** the name must match your Frigate+ sub-label classifier's name exactly (case-sensitive) — WatchTower doesn't do its own vehicle recognition, it just acts on what Frigate+ already decided.
+*   **Complementary, not exclusive:** use Known Vehicles for your own recognized vehicles and Exclusion Zones for everything else that isn't identity-based (a flag, foliage, a chronic reflection) — a detection only needs to clear *one* of them to be skipped.
+
+Find both in the **Zones Studio** tab (admin-only, since both write to shared notification settings).
 
 ---
 
 ## ✨ Key Features
 
 ### 🚀 Real-Time Tactical Hub
-*   **High-Speed Grid:** Monitor all your Frigate camera feeds in a low-latency MJPEG grid.
+*   **High-Speed Grid:** Monitor every camera at once — WebRTC when go2rtc can offer it (real audio+video, no per-camera connection limit), falling back to polled snapshots automatically for anything it can't.
 *   **Live Heartbeat:** Real-time MQTT connection status with visual "Green Light" confirmation.
 *   **Dynamic Telemetry:** Live tracking of CPU usage, Coral TPU inference speeds, and system uptime directly from your NVR.
+*   **Stability First:** De-duplicated event list ensures you see a single, real-time row per detection instead of hundreds of updates.
 
 ### 📧 Intelligent Background Notifications
 *   **Persistent Sentinel:** Alerts are processed server-side. Receive notifications even when your browser is closed.
@@ -49,14 +64,14 @@ Find it in **Notifications → Alert Rules → Exclusion Zones**.
 
 ### 🧠 Advanced AI Filtering & Analysis
 *   **Exclusion Zones:** Draw a region around a chronic false-trigger spot (a parked car, a flag, a tree branch) — detections centered inside it never reach a notification, regardless of what Frigate itself thinks about the object's motion. See the highlight above.
-*   **Parked Car Logic:** A lighter-weight companion — trusts Frigate's own `stationary` flag to filter vehicle alerts, no zone drawing required. Exclusion Zones are the more reliable option when that flag gets fooled by changing light/shadow.
+*   **Known Vehicles:** Recognize a *specific* vehicle by its Frigate+ sub-label and skip it wherever it's parked, without masking off any region of the frame. See the highlight above.
+*   **Parked Car Logic:** A lighter-weight companion — trusts Frigate's own `stationary` flag to filter vehicle alerts, no zone drawing or Frigate+ classifier required. Exclusion Zones/Known Vehicles are the more reliable options when that flag gets fooled by changing light/shadow.
 *   **Tactical AI Briefs:** Integrated with **Google Gemini 1.5 Flash** to generate human-readable security assessments of events.
 *   **Natural Language Search:** Find specific events using AI-powered search (e.g., *"Show me all the delivery trucks from yesterday morning"*).
 
-### 📐 Configuration & Design Studio
-*   **Zone & Mask Designer:** Draw motion masks and detection zones directly on your live feeds.
-*   **Instant YAML:** Automatically generate perfectly formatted YAML code to paste into your Frigate `config.yml`.
-*   **Stability First:** De-duplicated event list ensures you see a single, real-time row per detection instead of hundreds of updates.
+### 📐 Zones Studio
+*   **Exclusion Zones & Known Vehicles:** the two parked-car/false-trigger filters described above, in one place — see the highlight near the top of this README for the full explanation of how each works and when to use which.
+*   **Admin-only:** both write to shared notification settings, so this tab (like the Notifications tab) is hidden entirely for standard user accounts.
 
 ### 🎬 Reliable Clip Playback
 *   **Automatic Transcoding:** H.265/HEVC event clips (common on newer 4K cameras) are transcoded to browser-compatible H.264 on the fly — Firefox/Chrome can't decode HEVC natively.
@@ -157,7 +172,7 @@ Docker will automatically create a volume to persist your settings:
 
 ### 5. Enable Live Audio in the Camera Detail View (WebRTC)
 
-Opening a camera's expanded "Inspect & Detail" view streams over WebRTC via Frigate's embedded go2rtc, which is the only path with real audio (the grid uses MJPEG/snapshot polling instead, which has no audio channel at all — that's a format limitation, not a bug). To actually get video *and* audio there, one small addition to Frigate's own `config.yml` is usually required:
+Opening a camera's expanded "Inspect & Detail" view streams over WebRTC via Frigate's embedded go2rtc — the grid also uses WebRTC when a camera supports it, but every tile there is muted by default (nobody wants 7 cameras talking over each other at once). The detail view is where you actually get sound, with a mute/unmute toggle. To get video *and* audio there, one small addition to Frigate's own `config.yml` is usually required:
 
 ```yaml
 go2rtc:

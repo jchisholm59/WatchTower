@@ -1842,6 +1842,7 @@ Return a JSON object with:
             : `Frigate detected a ${evt.label} with ${Math.round((evt.top_score || 0.85) * 100)}% confidence.`,
           threatLevel: evt.label === 'person' ? 'medium' : 'low',
           recommendedAction: evt.label === 'person' ? 'Verify snapshot and 10s clip for visitor verification.' : 'Logged in Frigate archive.',
+          subLabel: evt.sub_label || undefined,
           box,
           snapshotUrl: `/api/frigate/proxy/image?serverUrl=${encodeURIComponent(baseUrl)}&path=${encodeURIComponent(`/api/events/${evt.id}/snapshot.jpg?bbox=1`)}`,
           thumbnailUrl: `/api/frigate/proxy/image?serverUrl=${encodeURIComponent(baseUrl)}&path=${encodeURIComponent(`/api/events/${evt.id}/thumbnail.jpg`)}`,
@@ -2106,6 +2107,7 @@ Return a JSON object with:
                 recommendedAction: evtData.label === 'person' ? 'Real-time MQTT security alert. Verify snapshot/stream.' : 'Captured via MQTT broker.',
                 box,
                 source: 'mqtt',
+                subLabel: evtData.sub_label || undefined,
                 snapshotUrl: activeMqttConfig.frigateServerUrl
                   ? `/api/frigate/proxy/image?serverUrl=${encodeURIComponent(activeMqttConfig.frigateServerUrl)}&path=${encodeURIComponent(`/api/events/${evtData.id}/snapshot.jpg?bbox=1`)}`
                   : undefined,
@@ -3173,6 +3175,25 @@ Return a JSON object with:
             message: `Skipped: Camera "${event.camera}" not in selected list`,
           });
           return { success: true, skipped: true, reason: `Filtered out: camera "${event.camera}" not in selected list` };
+        }
+      }
+
+      // Known vehicles: skip if Frigate's own sub-label classifier
+      // identified this specific detection as one of the camera owner's
+      // vehicles (e.g. a Frigate+ custom model trained to recognize a
+      // particular truck by name). Unlike exclusionZones, this suppresses
+      // by identity rather than location — an unrecognized vehicle parked
+      // in the exact same spot still alerts normally, so masking off a
+      // known vehicle's parking area doesn't also blind the camera to an
+      // intruder using that same spot.
+      const knownVehiclesForCamera = filters.knownVehicles?.[event.camera];
+      if (Array.isArray(knownVehiclesForCamera) && knownVehiclesForCamera.length > 0 && event.subLabel) {
+        if (knownVehiclesForCamera.includes(event.subLabel)) {
+          recordNotificationLog({
+            channel: 'all', status: 'skipped', eventId: event.id, camera: event.camera, label: event.label,
+            message: `Skipped: Recognized known vehicle "${event.subLabel}"`,
+          });
+          return { success: true, skipped: true, reason: `Filtered out: recognized known vehicle "${event.subLabel}"` };
         }
       }
 

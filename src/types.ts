@@ -87,6 +87,11 @@ export interface FrigateEvent {
   thumbnailUrl?: string;
   serverId?: string;
   source?: 'mqtt' | 'rest' | 'simulated';
+  /** Frigate+ custom sub-label classification (e.g. a specific recognized
+   *  vehicle like "Tundra"), when the camera has one trained and it matched
+   *  with sufficient confidence. Distinct from `label`, which is the base
+   *  object class (e.g. "car"). */
+  subLabel?: string;
 }
 
 export interface MqttStatusInfo {
@@ -207,6 +212,13 @@ export interface NotificationFilterConfig {
    *  thinks about the object (its own `stationary` flag can be unreliable
    *  for parked cars under changing light/shadow). Keyed by camera id. */
   exclusionZones?: Record<string, ExclusionZone[]>;
+  /** Per-camera list of Frigate+ sub-label names (e.g. "Tundra", "Rav4")
+   *  that identify the camera owner's own vehicles. A detection whose
+   *  sub_label matches one of these is skipped regardless of where in the
+   *  frame it is — unlike exclusionZones, this suppresses by *identity*,
+   *  not location, so it doesn't blind the camera to an unrecognized
+   *  vehicle parked in the same spot. Keyed by camera id. */
+  knownVehicles?: Record<string, string[]>;
 }
 
 export interface NotificationSettings {

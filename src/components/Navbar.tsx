@@ -269,17 +269,22 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Weather</span>
             </button>
 
-            <button
-              id="nav-tab-zones"
-              onClick={() => setActiveTab('zones')}
-              className={`flex items-center gap-2 px-4 py-2 text-xs uppercase tracking-wider font-black rounded-xl transition-all ${
-                activeTab === 'zones'
-                  ? 'bg-white text-slate-950 shadow-md font-black'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/70 border border-transparent'
-              }`}
-            >
-              <span>Zones Studio</span>
-            </button>
+            {/* Zones Studio configures exclusion zones and known-vehicle
+                identity rules — both write to shared notification filter
+                settings, so standard users don't get this tab either. */}
+            {isAdmin && (
+              <button
+                id="nav-tab-zones"
+                onClick={() => setActiveTab('zones')}
+                className={`flex items-center gap-2 px-4 py-2 text-xs uppercase tracking-wider font-black rounded-xl transition-all ${
+                  activeTab === 'zones'
+                    ? 'bg-white text-slate-950 shadow-md font-black'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/70 border border-transparent'
+                }`}
+              >
+                <span>Zones Studio</span>
+              </button>
+            )}
 
             <button
               id="nav-tab-config"
