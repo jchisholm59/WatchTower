@@ -4,6 +4,39 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-09-14 — Known Vehicles filtering + Zones Studio promoted to a top-level tab
+
+Before deploying (commit `b152252`), a backup point was made of the last-known-good build (commit `7b584ca` — notification log persistence, running live and stable at the time).
+
+**Git tag:** [`pre-known-vehicles-zones-studio-2026-09-14`](https://github.com/jchisholm59/WatchTower/tree/pre-known-vehicles-zones-studio-2026-09-14) at commit `7b584ca`
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-known-vehicles-zones-studio-20260914-083423/`
+
+Grew out of the shed/car false-positive investigation earlier the same day: user pointed out that Exclusion Zones, being location-based, forces a large enough zone to also blind the camera to an unrecognized vehicle (e.g. a U-Haul) parked in the same spot — sometimes large enough to swallow the driveway entrance. Added a second, identity-based mechanism: Known Vehicles, which skips a `car` detection when Frigate's own Frigate+ sub-label classification (`event.subLabel`) matches a configured name for that camera, regardless of position — so an unrecognized vehicle in that same spot still alerts.
+
+Also relocated Exclusion Zones + Known Vehicles from Notifications → Alert Rules (three levels deep) to their own top-level "Zones Studio" tab, per user request — replacing the old YAML-generator Zone Editor entirely (already flagged as redundant with Frigate's own native zone editor in an earlier conversation). `ZoneEditor.tsx` deleted; Zones Studio is admin-gated in the nav, same as Notifications, since both write to shared notification settings.
+
+Verified live (locally, pre-deploy): add/remove of a known vehicle persists end-to-end via direct API round-trip; a synthetic dispatch with a matching `sub_label` correctly returns `"Filtered out: recognized known vehicle"`; the new Zones Studio tab renders both sections with Alert Rules confirmed to no longer show them (no duplication).
+
+### To revert
+
+**Fast path — restores the exact build that was running, no rebuild, back in seconds:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-known-vehicles-zones-studio-20260914-083423 dist && pm2 restart watchtower"
+```
+
+**Full path — also rolls back the source tree to that commit (note: this does NOT restore the deleted `ZoneEditor.tsx` — `git checkout` on a commit before its deletion would, if that's ever actually wanted):**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-known-vehicles-zones-studio-2026-09-14 -- server.ts src/App.tsx src/components/Navbar.tsx src/components/NotificationSettingsView.tsx src/types.ts && rm -f src/components/ZonesStudioView.tsx && git checkout pre-known-vehicles-zones-studio-2026-09-14 -- src/components/ZoneEditor.tsx && npm run build && pm2 restart watchtower"
+```
+
+After either, confirm it came back up:
+```bash
+curl -s http://192.168.2.210:8100/api/birds/status
+```
+
+---
+
 ## 2026-09-14 — Persist notification delivery logs + day-by-day navigation
 
 Before deploying (commit `7b584ca`), a backup point was made of the last-known-good build (commit `e6f1a46` — Live grid WebRTC, running live and stable at the time).
