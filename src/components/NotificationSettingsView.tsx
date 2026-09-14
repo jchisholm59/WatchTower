@@ -1241,6 +1241,32 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
                       );
                     })}
                   </div>
+
+                  <div className="mt-3.5 pt-3.5 border-t border-slate-800">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Minimum Confidence to Alert
+                      </p>
+                      <span className="text-xs font-mono font-bold text-white bg-slate-950 px-2 py-0.5 rounded-lg border border-slate-800">
+                        {Math.round((localSettings.birdnet?.minAlertConfidence ?? 0.6) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.1"
+                      max="0.95"
+                      step="0.05"
+                      value={localSettings.birdnet?.minAlertConfidence ?? 0.6}
+                      onChange={(e) => updateBirdnet({ minAlertConfidence: parseFloat(e.target.value) })}
+                      className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1.5">
+                      Misidentifications (a dog barking read as a coyote or wild turkey, for instance) tend to score
+                      lower than correct IDs — raising this trades a few real low-confidence sightings for fewer
+                      false alerts. Only affects this daily alert; the Birds tab's own "Filter Strength" slider
+                      controls what's displayed there separately.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

@@ -412,6 +412,14 @@ export interface BirdNetConfig {
   /** Which channels get the daily-first-detection alert. Unset/empty means
    *  "whatever's globally enabled" (matches pre-existing behavior). */
   alertChannels?: ('gmail' | 'slack' | 'discord')[];
+  /** Minimum BirdNET-Go confidence (0-1) required to trigger a daily-first
+   *  alert. Misidentifications (a barking dog read as a coyote or wild
+   *  turkey, for instance) tend to cluster at lower confidence than correct
+   *  IDs, so raising this trades a few real low-confidence sightings for
+   *  fewer false alerts. Unset defaults to 0.6, matching the original
+   *  hardcoded threshold. Display-side filtering (the Birds tab's own
+   *  "Filter Strength" slider) is separate and unaffected by this. */
+  minAlertConfidence?: number;
 }
 
 export interface BirdSighting {

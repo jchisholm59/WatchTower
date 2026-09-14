@@ -941,7 +941,8 @@ async function startServer() {
               console.log('[Bird AI] Daily alert tracking reset for new day');
             }
 
-            if (!dailyAlertedSpecies.has(commonName) && sighting.confidence > 0.6 && persistentSettings.birdnet?.sendDailyAlerts) {
+            const minAlertConfidence = persistentSettings.birdnet?.minAlertConfidence ?? 0.6;
+            if (!dailyAlertedSpecies.has(commonName) && sighting.confidence > minAlertConfidence && persistentSettings.birdnet?.sendDailyAlerts) {
               dailyAlertedSpecies.add(commonName);
               saveDailyAlertState();
 
