@@ -4,6 +4,35 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-09-14 — Persist notification delivery logs + day-by-day navigation
+
+Before deploying (commit `7b584ca`), a backup point was made of the last-known-good build (commit `e6f1a46` — Live grid WebRTC, running live and stable at the time).
+
+**Git tag:** [`pre-delivery-log-persist-2026-09-14`](https://github.com/jchisholm59/WatchTower/tree/pre-delivery-log-persist-2026-09-14) at commit `e6f1a46`
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-delivery-log-persist-20260914-080005/`
+
+User reported the Delivery Log only ever showed ~4 entries. Root cause: it was in-memory only, capped at 100 entries, wiped on every pm2 restart — with how often this app gets redeployed, that left barely any real history. Now persisted to `notification_logs.json` in DATA_DIR, pruned by age (30 days) instead of a count cap, with a Previous/Next Day navigator in the UI instead of a flat unfilterable list. Verified locally: seeded entries dated today and yesterday, restarted the dev server, confirmed the log line `[Notifications] Loaded 2 log entries from disk` and that day navigation correctly split them. On the NUC itself, no prior log file existed to load (expected — this is the first deploy of persistence), so nothing to verify there beyond a clean restart.
+
+### To revert
+
+**Fast path — restores the exact build that was running, no rebuild, back in seconds:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-delivery-log-persist-20260914-080005 dist && pm2 restart watchtower"
+```
+
+**Full path — also rolls back the source tree to that commit:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-delivery-log-persist-2026-09-14 -- server.ts src/components/NotificationSettingsView.tsx && npm run build && pm2 restart watchtower"
+```
+
+After either, confirm it came back up:
+```bash
+curl -s http://192.168.2.210:8100/api/birds/status
+```
+
+---
+
 ## 2026-09-13 — Live grid uses WebRTC when available, not just snapshot polling
 
 Before deploying (commit `e6f1a46`), a backup point was made of the last-known-good build (commit `6b90fc7` — 500ms snapshot polling, running live and stable at the time).
