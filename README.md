@@ -261,7 +261,7 @@ Every alert email WatchTower sends uses a predictable subject line: `🚨 [Friga
 
 **How Bird matching works — anchored on the camera name, not the species name.** Car and Person alerts (from Frigate's own object detection) literally contain the words "CAR"/"PERSON" in the subject, so those are easy exact matches. Bird alerts, via the BirdNET-Go integration above, instead carry a specific species name (e.g. "BARRED OWL", "BLACK-CAPPED CHICKADEE") rather than the word "bird" — so matching by species name would mean an ever-growing keyword list. Instead, the Bird rule matches on `ESP32-C` in the subject's camera slot: every BirdNET-Go alert comes from that yard microphone's camera entry (`ESP32-C6` on this setup — `ESP32-C` also covers other C-series boards like C3), and Car/Person alerts never do (they come from the porch/driveway/yard *video* cameras), so this is a reliable positive match rather than a guess.
 
-The one wrinkle: that same yard microphone occasionally picks up non-bird wildlife sounds too (coyote, frog, squirrel, chipmunk chatter) — BirdNET-Go's classifier isn't birds-only. Those still need excluding from `Frigate/Bird` by name, same as before. If a new non-bird animal type starts showing up and getting mis-filed into `Frigate/Bird`, add it to the exclusion list below and re-import.
+The one wrinkle: that same yard microphone occasionally picks up other vocalizing wildlife too — real detections so far have included coyote, frog (green frog, wood frog), squirrel, and chipmunk chatter, and bat is plausible as well since BirdNET-Go's classifier isn't birds-only. Those still need excluding from `Frigate/Bird` by name, same as before. If a new non-bird species starts showing up and getting mis-filed into `Frigate/Bird`, add it to the exclusion list below and re-import.
 
 **Setup — Gmail supports bulk filter import**, which is much less painful than the "Create filter" dialog for queries this long:
 1. Save the XML below as a file (e.g. `frigate-gmail-filters.xml`).
@@ -302,14 +302,16 @@ The one wrinkle: that same yard microphone occasionally picks up non-bird wildli
   </entry>
 
   <!-- 4. Bird alerts: anchored on the ESP32-C camera name (BirdNET-Go's yard mic),
-       minus known non-bird animal sounds that mic also picks up. Add more
-       -subject:(...) exclusions here if a new non-bird animal type shows up
-       (e.g. possum, opossum), then re-import. -->
+       minus the non-bird sounds BirdNET-Go's audio classifier realistically
+       vocalize-IDs (coyote, frog, bat, squirrel, chipmunk chatter) -- not a
+       generic wildlife-camera list, since this is audio classification, not
+       a trail cam. Add more -subject:(...) exclusions if a new non-bird
+       species type shows up, then re-import. -->
   <entry>
     <category term='filter'></category>
     <title>Mail Filter</title>
     <content></content>
-    <apps:property name='hasTheWord' value='subject:("Frigate Alert") subject:(ESP32-C) -subject:(COYOTE) -subject:(DOG) -subject:(CAT) -subject:("GREEN FROG") -subject:(FROG) -subject:(RACCOON) -subject:(DEER) -subject:(FOX) -subject:(SQUIRREL) -subject:(RABBIT) -subject:(SKUNK) -subject:(CHIPMUNK) -subject:(GROUNDHOG) -subject:(MOOSE) -subject:(BEAR) -subject:(MOUSE) -subject:(RAT) -subject:(BAT) -subject:(SNAKE) -subject:(TURTLE)'/>
+    <apps:property name='hasTheWord' value='subject:("Frigate Alert") subject:(ESP32-C) -subject:(COYOTE) -subject:(FROG) -subject:(BAT) -subject:(SQUIRREL) -subject:(CHIPMUNK)'/>
     <apps:property name='label' value='Frigate/Bird'/>
   </entry>
 
