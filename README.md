@@ -257,11 +257,13 @@ The **Weather** tab refreshes every 10 minutes, matching the server-side cache.
 
 Every alert email WatchTower sends uses a predictable subject line: `🚨 [Frigate Alert] <OBJECT> detected on <camera> (<LEVEL> Threat)`. That's enough structure to auto-sort alerts out of your inbox into labels by detected object type, without touching the app itself — all Gmail-side.
 
-**Label structure:** a parent `Frigate` label (catches every alert, archived out of the inbox) plus three sub-labels: `Frigate/Car`, `Frigate/Person`, `Frigate/Bird`.
+**Label structure:** a parent `Frigate` label (catches every alert, archived out of the inbox) plus four sub-labels: `Frigate/Car`, `Frigate/Person`, `Frigate/Bird`, and `Frigate/Wildlife` for everything else — non-bird BirdNET-Go sounds *and* any non-car/non-person object Frigate's own video detection reports (dog, cat, moose, raccoon, bicycle, whatever the model supports).
 
 **How Bird matching works — anchored on the camera name, not the species name.** Car and Person alerts (from Frigate's own object detection) literally contain the words "CAR"/"PERSON" in the subject, so those are easy exact matches. Bird alerts, via the BirdNET-Go integration above, instead carry a specific species name (e.g. "BARRED OWL", "BLACK-CAPPED CHICKADEE") rather than the word "bird" — so matching by species name would mean an ever-growing keyword list. Instead, the Bird rule matches on `ESP32-C` in the subject's camera slot: every BirdNET-Go alert comes from that yard microphone's camera entry (`ESP32-C6` on this setup — `ESP32-C` also covers other C-series boards like C3), and Car/Person alerts never do (they come from the porch/driveway/yard *video* cameras), so this is a reliable positive match rather than a guess.
 
-The one wrinkle: that same yard microphone occasionally picks up other vocalizing wildlife too — real detections so far have included coyote, frog (green frog, wood frog), squirrel, and chipmunk chatter, and bat is plausible as well since BirdNET-Go's classifier isn't birds-only. Those still need excluding from `Frigate/Bird` by name, same as before. If a new non-bird species starts showing up and getting mis-filed into `Frigate/Bird`, add it to the exclusion list below and re-import.
+That same yard microphone occasionally picks up other vocalizing wildlife too — real detections so far have included coyote, frog (green frog, wood frog), squirrel, and chipmunk chatter, and bat is plausible as well since BirdNET-Go's classifier isn't birds-only. Those get excluded from `Frigate/Bird` by name (filter 4's exclusion list).
+
+**Wildlife is the true catch-all, not just a positive species list.** Gmail filters aren't evaluated top-down or exclusively — every filter that matches a message fires, and there's no "stop processing" action, so a naive "Wildlife = contains COYOTE/FROG/etc." filter would double-label those messages as *both* Bird and Wildlife (they also contain ESP32-C). Filter 5 instead matches the logical complement of Car/Person/Bird directly: not Car, not Person, and (not from ESP32-C at all, **or** one of the known non-bird ESP32-C sounds). The "not from ESP32-C at all" branch is what catches a Frigate *video* detection Filter 2/3 didn't recognize (a DOG or CAT alert from the porch/driveway/yard cameras, say) — those aren't birds and aren't Car/Person, so they land in Wildlife rather than sitting unsorted under just the parent `Frigate` label. If a new non-bird ESP32-C sound starts showing up in `Frigate/Bird` instead of `Frigate/Wildlife`, add it to both filter 4's exclusion list and filter 5's OR-group below, then re-import.
 
 **Setup — Gmail supports bulk filter import**, which is much less painful than the "Create filter" dialog for queries this long:
 1. Save the XML below as a file (e.g. `frigate-gmail-filters.xml`).
@@ -313,6 +315,21 @@ The one wrinkle: that same yard microphone occasionally picks up other vocalizin
     <content></content>
     <apps:property name='hasTheWord' value='subject:("Frigate Alert") subject:(ESP32-C) -subject:(COYOTE) -subject:(FROG) -subject:(BAT) -subject:(SQUIRREL) -subject:(CHIPMUNK)'/>
     <apps:property name='label' value='Frigate/Bird'/>
+  </entry>
+
+  <!-- 5. Wildlife: the true catch-all, not Car, not Person, and (not from
+       the ESP32-C mic at all, OR one of the known non-bird ESP32-C sounds).
+       That first branch is what catches a Frigate *video* detection that
+       isn't Car/Person (dog, cat, moose, raccoon, whatever the object model
+       supports), without it, those would sit unsorted under the parent
+       Frigate label. Keep the OR-group in sync with filter 4's exclusion
+       list if either one changes. -->
+  <entry>
+    <category term='filter'></category>
+    <title>Mail Filter</title>
+    <content></content>
+    <apps:property name='hasTheWord' value='subject:("Frigate Alert") -subject:(CAR) -subject:(PERSON) {-subject:(ESP32-C) subject:(COYOTE) subject:(FROG) subject:(BAT) subject:(SQUIRREL) subject:(CHIPMUNK)}'/>
+    <apps:property name='label' value='Frigate/Wildlife'/>
   </entry>
 
 </feed>
