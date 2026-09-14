@@ -4,6 +4,39 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-09-14 — Accurate Delivery Log status labels (and a free type-error fixup)
+
+Before deploying (commit `e33f489`), a backup point was made of the last-known-good build (commit `b152252` — Known Vehicles + Zones Studio, running live and stable at the time).
+
+**Git tag:** [`pre-log-status-cleanup-2026-09-14`](https://github.com/jchisholm59/WatchTower/tree/pre-log-status-cleanup-2026-09-14) at commit `b152252`
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-log-status-cleanup-20260914-084836/`
+
+User asked whether the "simulated" entries in the Delivery Log were leftover test data. They weren't — `status: 'simulated'` was overloaded: correctly used for "no real SMTP configured, dry run" in the Gmail path, but also reused for two unrelated MQTT breadcrumbs ("event received", "attempting dispatch"), making every real Frigate event look like fake data in the log. Split those into new `'received'`/`'dispatching'` statuses.
+
+While formalizing the type for this, also declared `'skipped'` and `channel: 'all'` properly (every call site already sent these, just undeclared) — this incidentally cleared the last 20 tsc errors that had been tolerated as known-baseline noise all session; `server.ts` now type-checks with zero errors. Also fixed the Delivery Log's color coding: `skipped` (a detection correctly filtered on purpose) was rendering in the same alarming red as an actual `failed` send — now neutral slate, distinct from real errors.
+
+Verified live: a synthetic known-vehicle-filtered dispatch produced a `skipped` entry, confirmed rendering in slate (not red) via computed style, not just eyeballing it.
+
+### To revert
+
+**Fast path — restores the exact build that was running, no rebuild, back in seconds:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-log-status-cleanup-20260914-084836 dist && pm2 restart watchtower"
+```
+
+**Full path — also rolls back the source tree to that commit:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-log-status-cleanup-2026-09-14 -- server.ts src/types.ts src/components/NotificationSettingsView.tsx && npm run build && pm2 restart watchtower"
+```
+
+After either, confirm it came back up:
+```bash
+curl -s http://192.168.2.210:8100/api/birds/status
+```
+
+---
+
 ## 2026-09-14 — Known Vehicles filtering + Zones Studio promoted to a top-level tab
 
 Before deploying (commit `b152252`), a backup point was made of the last-known-good build (commit `7b584ca` — notification log persistence, running live and stable at the time).
