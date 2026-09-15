@@ -2734,8 +2734,13 @@ Return a JSON object with:
       ],
     };
 
-    // Add clip link button if available
+    // Add playback link button if available. The ESP32-C6 (BirdNET-Go's
+    // yard mic) has no camera attached to it — its "clip" is always an
+    // audio recording, never video — so the button wording needs to match
+    // what's actually behind the link rather than assume every source is a
+    // camera.
     if (clipUrl) {
+      const isAudioOnly = event.source === 'birdnet';
       payload.blocks.push({
         type: 'actions',
         elements: [
@@ -2743,11 +2748,11 @@ Return a JSON object with:
             type: 'button',
             text: {
               type: 'plain_text',
-              text: '▶️ View Event Clip',
+              text: isAudioOnly ? '🔊 Listen to Audio Clip' : '▶️ View Event Clip',
               emoji: true
             },
             url: clipUrl,
-            action_id: 'view_clip'
+            action_id: isAudioOnly ? 'listen_audio' : 'view_clip'
           }
         ]
       });
@@ -2927,6 +2932,11 @@ Return a JSON object with:
     const clipUrl = externalClipUrl
       || (frigateUrl && event.id ? `${frigateUrl}/api/events/${event.id}/clip.mp4` : null);
 
+    // The ESP32-C6 (BirdNET-Go's yard mic) has no camera attached to it —
+    // its "clip" is always an audio recording, never video — so the button
+    // wording needs to match what's actually behind the link.
+    const isAudioOnly = event.source === 'birdnet';
+
     // A non-Frigate event (e.g. BirdNET) already carries its own real image
     // URL — reconstructing one from event.id would hit Frigate's API with an
     // ID it's never heard of. String(event.id) guards against BirdNET-Go's
@@ -3026,7 +3036,7 @@ Return a JSON object with:
 
       ${clipUrl ? `
       <div style="text-align: center;">
-        <a href="${clipUrl}" class="clip-btn">▶️ View Event Recording</a>
+        <a href="${clipUrl}" class="clip-btn">${isAudioOnly ? '🔊 Listen to Audio Clip' : '▶️ View Event Recording'}</a>
       </div>
       ` : ''}
     </div>
