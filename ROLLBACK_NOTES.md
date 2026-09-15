@@ -4,6 +4,41 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-09-15 — Surface Frigate's genai description in the Review tab and alerts
+
+Before deploying (commit `b41876b`), a backup point was made of the last-known-good build (commit `ef0688d` — BirdNET confidence threshold, plus 5 unrelated Gmail-filter doc commits pushed directly to GitHub in between, running live and stable at the time).
+
+**Git tag:** [`pre-genai-description-2026-09-15`](https://github.com/jchisholm59/WatchTower/tree/pre-genai-description-2026-09-15) at commit `ef0688d`
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-genai-description-20260915-003648/` (see `ls ~/watchtower-backups/` for the exact timestamp)
+
+Followed directly from getting Frigate's native genai (local Ollama/moondream on driveway and porch, see the [[project_frigate_local_genai]] memory) actually working — the descriptions it generates were sitting unused in Frigate's own event records. Added `FrigateEvent.description`, extracted from Frigate's `data.description` in both the REST and MQTT event-normalization paths, and wired it through to the Review tab (card excerpt + inspector modal, its own visually distinct section) and to Slack/Gmail alert content. Kept deliberately separate from the pre-existing `summary` field (WatchTower's own templated placeholder / manually-triggered Gemini tactical brief) to avoid the two AI sources clobbering each other.
+
+Since Frigate's genai call runs asynchronously *after* the MQTT "end" event notifications dispatch from, `dispatchNotification` gives it one bounded 2-second wait (real-world warm-cache latency measured at ~0.4s) before building alert content, skipped for test/simulated events. This is a real, deliberate latency tradeoff on outgoing alerts — only applies to real MQTT-sourced Frigate events, not BirdNET or manual test dispatches.
+
+Also found and safely rebased 5 commits the user had pushed directly to GitHub (Gmail filter setup docs) that weren't in the local working branch — no conflicts, different files.
+
+Verified live (locally, pre-deploy): backend normalization confirmed against the real NUC's Frigate event data (real historical porch descriptions extracted correctly); Review tab card and inspector modal both render the new section with real data, visually distinct from the existing Gemini brief section; `tsc --noEmit` and `npm run build` clean. Post-deploy: pm2 restarted cleanly, settings/logs/MQTT/BirdNET all reloaded without error.
+
+### To revert
+
+**Fast path — restores the exact build that was running, no rebuild, back in seconds:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-genai-description-20260915-003648 dist && pm2 restart watchtower"
+```
+
+**Full path — also rolls back the source tree to that commit:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-genai-description-2026-09-15 -- server.ts src/types.ts src/components/EventsReview.tsx && npm run build && pm2 restart watchtower"
+```
+
+After either, confirm it came back up:
+```bash
+curl -s http://192.168.2.210:8100/api/birds/status
+```
+
+---
+
 ## 2026-09-14 — Configurable minimum-confidence threshold for BirdNET daily alerts
 
 Before deploying (commit `c1500b3`), a backup point was made of the last-known-good build (commit `e33f489` — Delivery Log status label cleanup, running live and stable at the time).
