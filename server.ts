@@ -1844,6 +1844,7 @@ Return a JSON object with:
           threatLevel: evt.label === 'person' ? 'medium' : 'low',
           recommendedAction: evt.label === 'person' ? 'Verify snapshot and 10s clip for visitor verification.' : 'Logged in Frigate archive.',
           subLabel: evt.sub_label || undefined,
+          description: evt.data?.description || undefined,
           box,
           snapshotUrl: `/api/frigate/proxy/image?serverUrl=${encodeURIComponent(baseUrl)}&path=${encodeURIComponent(`/api/events/${evt.id}/snapshot.jpg?bbox=1`)}`,
           thumbnailUrl: `/api/frigate/proxy/image?serverUrl=${encodeURIComponent(baseUrl)}&path=${encodeURIComponent(`/api/events/${evt.id}/thumbnail.jpg`)}`,
@@ -2109,6 +2110,7 @@ Return a JSON object with:
                 box,
                 source: 'mqtt',
                 subLabel: evtData.sub_label || undefined,
+                description: evtData.data?.description || undefined,
                 snapshotUrl: activeMqttConfig.frigateServerUrl
                   ? `/api/frigate/proxy/image?serverUrl=${encodeURIComponent(activeMqttConfig.frigateServerUrl)}&path=${encodeURIComponent(`/api/events/${evtData.id}/snapshot.jpg?bbox=1`)}`
                   : undefined,
@@ -2713,6 +2715,13 @@ Return a JSON object with:
             text: `*Surveillance Assessment:*\n${event.summary || 'Target object flagged by Frigate AI vision.'}\n*Action:* ${event.recommendedAction || 'Verify snapshot and clip.'}`,
           },
         },
+        ...(event.description ? [{
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*Frigate AI Description:*\n_${event.description}_`,
+          },
+        }] : []),
         {
           type: 'context',
           elements: [
@@ -3008,6 +3017,13 @@ Return a JSON object with:
         <p style="margin: 6px 0 0 0; font-size: 12px; color: #a1a1aa;"><strong>Recommended Action:</strong> ${event.recommendedAction || 'Inspect live stream or historical recordings.'}</p>
       </div>
 
+      ${event.description ? `
+      <div class="summary-box" style="border-left-color: #60a5fa;">
+        <strong style="color: #93c5fd; font-size: 12px; text-transform: uppercase;">Frigate AI Description</strong>
+        <p style="margin: 6px 0 0 0; font-size: 13px; color: #d4d4d8; font-style: italic;">"${event.description}"</p>
+      </div>
+      ` : ''}
+
       ${clipUrl ? `
       <div style="text-align: center;">
         <a href="${clipUrl}" class="clip-btn">▶️ View Event Recording</a>
@@ -3234,6 +3250,31 @@ Return a JSON object with:
     // Mark as "notified" now that it passed all filters to prevent repeats for this ID
     notifiedEvents.set(event.id, now);
     lastGlobalNotificationTime = now;
+
+    // Frigate's own genai description (when enabled for this camera/label)
+    // is generated asynchronously after the "end" MQTT message we just
+    // dispatched from, so it's essentially never ready at this exact
+    // instant. Give it one short, bounded window to catch up before
+    // building the alert content — this trades a couple seconds of alert
+    // latency for a real chance of the AI description making it into the
+    // outgoing email/Slack message instead of only showing up later in the
+    // Review tab. Skipped for test/simulated events, which have no real
+    // Frigate event ID to look up.
+    if (!event.description && event.source === 'mqtt' && event.id && !String(event.id).startsWith('test') && activeMqttConfig.frigateServerUrl) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      try {
+        const frigateUrl = activeMqttConfig.frigateServerUrl.replace(/\/$/, '');
+        const detailResp = await fetch(`${frigateUrl}/api/events/${event.id}`);
+        if (detailResp.ok) {
+          const detail: any = await detailResp.json();
+          if (detail?.data?.description) {
+            event.description = detail.data.description;
+          }
+        }
+      } catch (_) {
+        // Best-effort only — proceed without the description if this fails.
+      }
+    }
 
     const dispatched: string[] = [];
     const errors: Record<string, string> = {};

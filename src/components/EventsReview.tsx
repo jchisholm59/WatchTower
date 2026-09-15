@@ -23,6 +23,7 @@ import {
   Zap,
   ExternalLink,
   Sliders,
+  MessageSquare,
 } from 'lucide-react';
 import { SnapshotViewerModal } from './SnapshotViewerModal';
 import { TenSecondPlaybackModal } from './TenSecondPlaybackModal';
@@ -521,6 +522,14 @@ export const EventsReview: React.FC<EventsReviewProps> = ({
                   </div>
                 </div>
 
+                {/* Frigate's own genai description, when its local/cloud vision model has generated one */}
+                {evt.description && (
+                  <div className="px-5 py-3 bg-slate-950/80 border-t border-slate-800 text-xs text-slate-300 flex items-start gap-2.5">
+                    <MessageSquare className="w-3.5 h-3.5 text-sky-400 shrink-0 mt-0.5" />
+                    <p className="line-clamp-2 italic text-slate-400 text-xs font-medium">"{evt.description}"</p>
+                  </div>
+                )}
+
                 {/* AI Summary excerpt if available */}
                 {evt.summary && (
                   <div className="px-5 py-3 bg-slate-950/80 border-t border-slate-800 text-xs text-slate-300 flex items-start gap-2.5">
@@ -675,6 +684,23 @@ export const EventsReview: React.FC<EventsReviewProps> = ({
 
             {/* AI Security Analysis Section */}
             <div className="p-6 space-y-5 overflow-y-auto max-h-[360px]">
+              {/* Frigate's own genai description, generated automatically at detection time */}
+              {inspectingEvent.description && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-sky-400" />
+                    <h4 className="text-xs uppercase tracking-[0.25em] font-black text-slate-400">
+                      Frigate AI Description
+                    </h4>
+                  </div>
+                  <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 text-xs">
+                    <p className="text-slate-200 leading-relaxed font-medium text-sm italic">
+                      "{inspectingEvent.description}"
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-amber-400" />

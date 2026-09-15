@@ -92,6 +92,15 @@ export interface FrigateEvent {
    *  with sufficient confidence. Distinct from `label`, which is the base
    *  object class (e.g. "car"). */
   subLabel?: string;
+  /** Frigate's own genai-generated natural-language description of this
+   *  detection (e.g. from a local Ollama vision model configured directly
+   *  in Frigate's config.yml), pulled from the event's `data.description`
+   *  field. Distinct from `summary`, which is WatchTower's own templated
+   *  placeholder text or a manually-triggered Gemini tactical brief. Only
+   *  present for cameras/labels with Frigate's genai enabled, and only
+   *  once that generation finishes — often absent on the very first MQTT
+   *  push and filled in by a later event sync. */
+  description?: string;
 }
 
 export interface MqttStatusInfo {
