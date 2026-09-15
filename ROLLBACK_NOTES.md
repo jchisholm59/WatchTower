@@ -4,6 +4,40 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-09-15 — Fix dead "Generate AI Brief" endpoint, full description sidebar in Snapshot view
+
+Before deploying (commit `d2a59e4`), a backup point was made of the last-known-good build (commit `343196d` — genai description surfacing, running live and stable at the time).
+
+**Git tag:** [`pre-snapshot-description-sidebar-2026-09-15`](https://github.com/jchisholm59/WatchTower/tree/pre-snapshot-description-sidebar-2026-09-15) at commit `343196d`
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-snapshot-description-sidebar-20260915-004521/`
+
+Two small fixes noticed/requested right after the genai-description work above:
+
+1. The event inspector's "Generate AI Brief" button called `/api/gemini/describe-event`, a route that never existed — the backend only ever defined `/api/gemini/summarize-event`. Presumably 404ing silently since the button was built. Pointed the frontend at the real route (one-line fix; only two references to either name existed in the whole codebase).
+2. The Review tab intentionally line-clamps the Frigate genai description to keep cards compact, so a long description had no way to be read in full. Added it as a scrollable sidebar next to the image in `SnapshotViewerModal.tsx` — only rendered when `event.description` exists, modal widens from `max-w-4xl` to `max-w-6xl` in that case, unchanged otherwise.
+
+Verified live (locally, pre-deploy): reconnected the dev environment to the real NUC Frigate node, opened Snapshot View on a real porch event with a description — sidebar renders correctly alongside the image with existing zoom/zones controls unaffected. `tsc --noEmit` and `npm run build` clean. Post-deploy: pm2 restarted cleanly, no new errors in logs.
+
+### To revert
+
+**Fast path — restores the exact build that was running, no rebuild, back in seconds:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-snapshot-description-sidebar-20260915-004521 dist && pm2 restart watchtower"
+```
+
+**Full path — also rolls back the source tree to that commit:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-snapshot-description-sidebar-2026-09-15 -- src/components/EventsReview.tsx src/components/SnapshotViewerModal.tsx && npm run build && pm2 restart watchtower"
+```
+
+After either, confirm it came back up:
+```bash
+curl -s http://192.168.2.210:8100/api/birds/status
+```
+
+---
+
 ## 2026-09-15 — Surface Frigate's genai description in the Review tab and alerts
 
 Before deploying (commit `b41876b`), a backup point was made of the last-known-good build (commit `ef0688d` — BirdNET confidence threshold, plus 5 unrelated Gmail-filter doc commits pushed directly to GitHub in between, running live and stable at the time).
