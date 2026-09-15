@@ -108,7 +108,7 @@ export const EventsReview: React.FC<EventsReviewProps> = ({
   const handleAnalyzeWithGemini = async (evt: FrigateEvent) => {
     setIsAiLoading(true);
     try {
-      const resp = await fetch('/api/gemini/describe-event', {
+      const resp = await fetch('/api/gemini/summarize-event', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -12,6 +12,7 @@ import {
   Sparkles,
   Shield,
   Eye,
+  MessageSquare,
 } from 'lucide-react';
 import { FrigateEvent, CameraStream, ExclusionZone } from '../types';
 
@@ -74,7 +75,7 @@ export const SnapshotViewerModal: React.FC<SnapshotViewerModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-4xl rounded-2xl bg-slate-950 border border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
+      <div className={`relative w-full ${event.description ? 'max-w-6xl' : 'max-w-4xl'} rounded-2xl bg-slate-950 border border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[95vh]`}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/90">
           <div className="flex items-center gap-3">
@@ -108,8 +109,9 @@ export const SnapshotViewerModal: React.FC<SnapshotViewerModalProps> = ({
           </div>
         </div>
 
-        {/* Snapshot View Canvas Area */}
-        <div className="relative bg-black flex-1 min-h-[380px] max-h-[560px] overflow-hidden flex items-center justify-center select-none group">
+        {/* Snapshot View Canvas Area + (when available) full AI description sidebar */}
+        <div className="flex-1 min-h-[380px] max-h-[560px] flex flex-col sm:flex-row overflow-hidden">
+        <div className="relative bg-black flex-1 min-h-[380px] overflow-hidden flex items-center justify-center select-none group">
           {event.snapshotUrl ? (
             <div
               className="relative transition-transform duration-200 ease-out origin-center"
@@ -238,6 +240,21 @@ export const SnapshotViewerModal: React.FC<SnapshotViewerModalProps> = ({
               {Math.round(event.score * 100)}% confidence)
             </div>
           </div>
+        </div>
+
+        {/* Full, untruncated Frigate AI description — shown beside the image rather
+            than the clipped excerpt used on the Review tab's event cards. */}
+        {event.description && (
+          <div className="w-full sm:w-72 shrink-0 bg-slate-900/90 border-t sm:border-t-0 sm:border-l border-slate-800 p-5 overflow-y-auto">
+            <div className="flex items-center gap-2 mb-3">
+              <MessageSquare className="w-4 h-4 text-sky-400" />
+              <h4 className="text-xs uppercase tracking-[0.25em] font-black text-slate-400">
+                Frigate AI Description
+              </h4>
+            </div>
+            <p className="text-sm text-slate-200 leading-relaxed italic">"{event.description}"</p>
+          </div>
+        )}
         </div>
 
         {/* Metadata & Actions Footer */}
