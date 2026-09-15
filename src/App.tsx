@@ -49,6 +49,18 @@ const DEFAULT_SERVERS: FrigateServerConfig[] = [
   },
 ];
 
+const NAV_TABS: ActiveTab[] = ['live', 'events', 'birds', 'tides', 'flights', 'weather', 'zones', 'config', 'system', 'notifications'];
+const ADMIN_ONLY_TABS: ActiveTab[] = ['zones', 'notifications'];
+
+// Resolves a URL path to a tab, falling back to 'live' for anything
+// unrecognized or (for a direct/bookmarked link) gated behind admin.
+function resolveTabFromPath(pathname: string, isAdmin: boolean): ActiveTab {
+  const candidate = pathname.replace(/^\//, '') as ActiveTab;
+  if (!NAV_TABS.includes(candidate)) return 'live';
+  if (ADMIN_ONLY_TABS.includes(candidate) && !isAdmin) return 'live';
+  return candidate;
+}
+
 function Dashboard({
   currentUser,
   onLogout,
@@ -56,7 +68,45 @@ function Dashboard({
   currentUser: { username: string; role: 'admin' | 'standard' };
   onLogout: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('live');
+  // activeTab is also reflected in the URL (pushState per change, synced on
+  // browser back/forward via popstate) so the browser/Android back button
+  // returns to the previous screen instead of leaving the app — there's
+  // otherwise no history entry for it to pop. setActiveTab keeps the exact
+  // same (tab: ActiveTab) => void signature every existing call site
+  // already uses.
+  const isAdmin = currentUser.role === 'admin';
+  const [activeTab, setActiveTabState] = useState<ActiveTab>(() =>
+    resolveTabFromPath(window.location.pathname, isAdmin)
+  );
+
+  const setActiveTab = useCallback(
+    (tab: ActiveTab) => {
+      const resolved = resolveTabFromPath(`/${tab}`, isAdmin);
+      setActiveTabState(resolved);
+      const path = `/${resolved}`;
+      if (window.location.pathname !== path) {
+        window.history.pushState(null, '', path);
+      }
+    },
+    [isAdmin]
+  );
+
+  useEffect(() => {
+    // Make sure the address bar reflects the resolved initial tab (an
+    // unrecognized or admin-only path falls back to 'live').
+    const path = `/${activeTab}`;
+    if (window.location.pathname !== path) {
+      window.history.replaceState(null, '', path);
+    }
+
+    const handlePopState = () => {
+      setActiveTabState(resolveTabFromPath(window.location.pathname, isAdmin));
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+    // Only wire this up once per mount — isAdmin doesn't change mid-session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Dummy camera option state (persisted)
   const [dummyCamerasEnabled, setDummyCamerasEnabled] = useState<boolean>(() => {
