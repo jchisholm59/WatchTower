@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "net.ts.taild858f.granite.twa",
+    "sha256_cert_fingerprints": [
+      "03:39:A8:7D:B3:32:DF:31:19:C1:FA:5C:AB:B7:4C:C9:18:EC:6A:28:31:74:37:E2:89:DB:94:EF:E8:8A:A1:12"
+    ]
+  }
+}]

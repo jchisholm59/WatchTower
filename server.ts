@@ -3534,7 +3534,10 @@ Return a JSON object with:
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    // dotfiles: 'allow' - Express's static middleware ignores dotfiles/
+    // dot-directories by default, which would silently 404 the Android TWA's
+    // /.well-known/assetlinks.json (Digital Asset Links verification file).
+    app.use(express.static(distPath, { dotfiles: 'allow' }));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
