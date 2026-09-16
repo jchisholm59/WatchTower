@@ -214,7 +214,7 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
           </div>
         </div>
         <div className="bg-slate-900 border border-slate-800 p-5 flex flex-col justify-between rounded-2xl shadow-sm">
-          <span className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Coral Inference</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">{telemetry ? `${telemetry.coral.deviceLabel} Inference` : 'Inference'}</span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-3xl font-black font-mono tracking-tighter text-white">
               {telemetry ? telemetry.coral.inferenceSpeedMs.toFixed(1) : '8.2'}

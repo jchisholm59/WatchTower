@@ -923,7 +923,7 @@ function Dashboard({
             Connected: <strong className="text-white font-bold">{activeServer.name.toUpperCase()}</strong>{' '}
             ({activeServer.isSimulated ? 'Internal Simulator' : activeServer.url || 'No active endpoint'})
           </div>
-          <div className="font-mono text-slate-400">Coral EdgeTPU /dev/bus/usb/001/004 • Detection Engine Active</div>
+          <div className="font-mono text-slate-400">{telemetry.coral.deviceLabel} • Detection Engine Active</div>
         </footer>
       </main>
 
