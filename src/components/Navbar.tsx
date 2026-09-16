@@ -160,7 +160,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </p>
             </div>
             <div className="p-3 sm:p-4 bg-slate-900/60 border border-slate-800 rounded-2xl">
-              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500 mb-0.5">Coral TPU</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500 mb-0.5">{telemetry.coral.deviceLabel}</p>
               <p className="text-lg sm:text-xl font-mono font-bold text-white">
                 {telemetry.coral.inferenceSpeedMs} <span className="text-xs text-slate-400 font-sans font-bold">ms</span>
               </p>

@@ -148,6 +148,8 @@ export interface CoralTelemetry {
   detectionFps: number;
   status: 'optimal' | 'throttled' | 'offline';
   deviceType: string;
+  /** Short display label for the actual detector hardware (e.g. "Coral TPU", "OpenVINO", "CPU"). */
+  deviceLabel: string;
 }
 
 export interface StorageTelemetry {

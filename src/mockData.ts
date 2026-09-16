@@ -365,6 +365,7 @@ export const INITIAL_TELEMETRY: SystemTelemetryData = {
     detectionFps: 42.1,
     status: 'optimal',
     deviceType: 'Google Coral USB Accelerator (EdgeTPU)',
+    deviceLabel: 'Coral TPU',
   },
   storage: {
     recordingsUsedGb: 1245.4,

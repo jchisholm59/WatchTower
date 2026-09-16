@@ -140,7 +140,7 @@ export const CameraDetailModal: React.FC<CameraDetailModalProps> = ({
             </span>
             <span className="text-slate-700">|</span>
             <span className="text-slate-400 font-medium">
-              Telemetry & Coral TPU: Connected
+              Telemetry & Detector: Connected
             </span>
           </div>
 

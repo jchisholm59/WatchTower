@@ -109,6 +109,29 @@ function hasVaapiDevice(): boolean {
   return vaapiAvailable;
 }
 
+// Maps Frigate's detector "type" config value to a short display label for
+// the dashboard's telemetry tile (which has room for ~10-12 characters).
+function friendlyDetectorLabel(type: string | undefined): string {
+  switch ((type || '').toLowerCase()) {
+    case 'edgetpu':
+      return 'Coral TPU';
+    case 'openvino':
+      return 'OpenVINO';
+    case 'tensorrt':
+      return 'TensorRT';
+    case 'onnx':
+      return 'ONNX';
+    case 'rknn':
+      return 'RKNN';
+    case 'hailo8l':
+      return 'Hailo';
+    case 'cpu':
+      return 'CPU';
+    default:
+      return 'AI Detector';
+  }
+}
+
 function runFfmpeg(args: string[], tmpPath: string, outPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const ffmpeg = spawn('ffmpeg', args);
@@ -1295,6 +1318,24 @@ async function startServer() {
             }
           }
 
+          // The stats key (e.g. "coral", "detector01") is config-defined and
+          // doesn't reveal the actual hardware, so look up the real type
+          // (edgetpu/openvino/cpu/etc.) from Frigate's own config.
+          let deviceLabel = 'AI Detector';
+          try {
+            const configController = new AbortController();
+            const configTimeoutId = setTimeout(() => configController.abort(), 4000);
+            const configResp = await fetch(`${cleanBase}/api/config`, { headers, signal: configController.signal });
+            clearTimeout(configTimeoutId);
+            if (configResp.ok) {
+              const cfg: any = await configResp.json();
+              const hwType = cfg?.detectors?.[detectorType]?.type;
+              deviceLabel = friendlyDetectorLabel(hwType);
+            }
+          } catch {
+            // Config lookup is best-effort; fall back to the generic label.
+          }
+
           const storage = stats.service?.storage || {};
           const recStorage = storage['/media/frigate/recordings'] || { total: 2000000, used: 1245000 };
           const clipStorage = storage['/media/frigate/clips'] || { total: 500000, used: 82300 };
@@ -1327,6 +1368,7 @@ async function startServer() {
                 detectionFps,
                 status: 'optimal' as const,
                 deviceType: detectorType,
+                deviceLabel,
               },
               storage: {
                 recordingsUsedGb: Math.round(((recStorage.used || 0) / 1024) * 10) / 10,
@@ -1363,6 +1405,7 @@ async function startServer() {
           detectionFps: 42.1,
           status: 'optimal',
           deviceType: 'Google Coral USB Accelerator (EdgeTPU)',
+          deviceLabel: 'Coral TPU',
         },
         storage: {
           recordingsUsedGb: 1245.4,
