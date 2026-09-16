@@ -3580,8 +3580,24 @@ Return a JSON object with:
     // dotfiles: 'allow' - Express's static middleware ignores dotfiles/
     // dot-directories by default, which would silently 404 the Android TWA's
     // /.well-known/assetlinks.json (Digital Asset Links verification file).
-    app.use(express.static(distPath, { dotfiles: 'allow' }));
+    //
+    // index.html must never be cached: it's what names the current hashed
+    // JS/CSS bundle, so a cached copy keeps pointing a browser (or the
+    // Android TWA, which shares Chrome's cache) at a stale build after every
+    // deploy. The hashed files under /assets/ are safe to cache forever
+    // since their filename changes whenever their content does.
+    app.use(express.static(distPath, {
+      dotfiles: 'allow',
+      setHeaders: (res, filePath) => {
+        if (path.basename(filePath) === 'index.html') {
+          res.setHeader('Cache-Control', 'no-cache');
+        } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    }));
     app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
