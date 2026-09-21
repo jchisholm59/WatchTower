@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { FrigateEvent, CameraStream, MqttStatusInfo, ExclusionZone } from '../types';
 import {
   Layers,
@@ -71,6 +71,28 @@ export const EventsReview: React.FC<EventsReviewProps> = ({
   const [inspectingEvent, setInspectingEvent] = useState<FrigateEvent | null>(null);
   const [snapshotEvent, setSnapshotEvent] = useState<FrigateEvent | null>(null);
   const [playbackEvent, setPlaybackEvent] = useState<FrigateEvent | null>(null);
+  const [fullscreenEvent, setFullscreenEvent] = useState<FrigateEvent | null>(null);
+  const fullscreenRef = useRef<HTMLDivElement>(null);
+
+  // Real browser fullscreen for the expand button; the fixed overlay below is
+  // the fallback where the Fullscreen API isn't available (e.g. iOS Safari).
+  useEffect(() => {
+    if (!fullscreenEvent) return;
+    fullscreenRef.current?.requestFullscreen?.().catch(() => {});
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreenEvent(null);
+    };
+    const onFsChange = () => {
+      if (!document.fullscreenElement) setFullscreenEvent(null);
+    };
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('fullscreenchange', onFsChange);
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    };
+  }, [fullscreenEvent]);
   const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [isSendingTestMqtt, setIsSendingTestMqtt] = useState<boolean>(false);
@@ -578,6 +600,15 @@ export const EventsReview: React.FC<EventsReviewProps> = ({
                       className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
                       title="AI Analysis & Details"
                     >
+                      <Sparkles className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Fullscreen */}
+                    <button
+                      onClick={() => setFullscreenEvent(evt)}
+                      className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                      title="Fullscreen"
+                    >
                       <Maximize2 className="w-3.5 h-3.5" />
                     </button>
 
@@ -594,6 +625,28 @@ export const EventsReview: React.FC<EventsReviewProps> = ({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Fullscreen image viewer */}
+      {fullscreenEvent && (
+        <div
+          ref={fullscreenRef}
+          onClick={() => setFullscreenEvent(null)}
+          className="fixed inset-0 z-[60] bg-black flex items-center justify-center cursor-zoom-out"
+        >
+          <img
+            src={fullscreenEvent.snapshotUrl || fullscreenEvent.thumbnailUrl}
+            alt={`${fullscreenEvent.label} on ${fullscreenEvent.camera}`}
+            className="max-w-full max-h-full object-contain"
+          />
+          <button
+            onClick={() => setFullscreenEvent(null)}
+            className="absolute top-4 right-4 p-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white border border-slate-700"
+            title="Close (Esc)"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
       )}
 
