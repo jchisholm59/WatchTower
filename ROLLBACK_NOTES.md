@@ -4,6 +4,61 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-09-21 — Clip transcoding: VAAPI probe, concurrency cap, on-demand priority
+
+Deploying commit `b00ac33`. Last-known-good is commit `b472f6e` (Review expand button / AI details icon).
+
+**Git tag (not yet created — create it if you want a named backup point):** `pre-transcode-probe-2026-09-21` at commit `b472f6e`
+
+**Build snapshot on the NUC (optional — change is deployed and verified; create before any further deploy):** `/home/jim/watchtower-backups/dist-pre-transcode-probe-<timestamp>/` — the timestamp comes from the snapshot command below; `ls ~/watchtower-backups/` shows it afterwards.
+
+Changes, all in the HEVC clip transcode path (`server.ts`) plus the Dockerfile:
+
+1. **VAAPI probe.** The old `/dev/dri/renderD128` existence check is replaced by a one-time test encode (`h264_vaapi`, same options as the real transcode). Hosts with a render node but no video encoder (e.g. Apple Silicon under Asahi Linux) skip the failed attempt. `TRANSCODE_HWACCEL=auto|vaapi|none` overrides it. **Risk on the NUC:** if the probe wrongly fails there, transcoding silently falls back to software x264 — slower, but playback still works.
+2. **Concurrency cap.** At most 2 transcodes run at once (`TRANSCODE_CONCURRENCY`, default 2); the rest queue.
+3. **On-demand priority.** A clip someone opens jumps ahead of queued background cache-warm jobs, and a queued warm job for that same clip is promoted. Running jobs are never interrupted.
+4. **Dockerfile** installs `intel-media-va-driver`/`vainfo` only on amd64 (irrelevant to the pm2 deploy; it only affects Docker builds, notably arm64).
+
+Verified before deploy: `server.ts` passes a Node syntax check; the probe command fails cleanly (~0.1s) on an M1/Asahi box; the queue/priority/promotion logic was exercised in isolation. **Verified live on the NUC (2026-09-21):** the probe passes and `VAAPI hardware encode finished in 929ms` for a 4K HEVC porch clip (software had taken 2.5–8s).
+
+**Gotcha found during the deploy — pm2 daemon groups.** The pm2 background daemon keeps the groups it was started with. Ours lacked `render` (gid 991), so the app got `No VA display found for device /dev/dri/renderD128` even though an interactive shell could use the GPU. This means VAAPI had probably never worked under pm2 (the old code silently fell back to software). Fix: `pm2 save && pm2 kill && pm2 resurrect` from a login shell that has `render`, then confirm with `grep '^Groups' /proc/$(pm2 pid watchtower)/status` (must include 991). Do this again if the probe ever logs `VAAPI probe failed … No VA display found`.
+
+**Which cameras transcode:** only HEVC clips (Driveway and Porch, both 4K, at time of writing). Every other camera records H.264 and is passed through untouched, so the encoder never runs for them.
+
+**After deploying, confirm:** after a new HEVC event ends (walk past the porch camera), `grep -h "Clip Transcode\|Clip Cache Warm" ~/.pm2/logs/watchtower-out.log | tail` should show `VAAPI hardware encoder verified by probe` then `VAAPI hardware encode finished in …ms`. The probe is lazy — nothing is logged until the first HEVC transcode. Note `console.error` output (including full ffmpeg failure text) goes to `~/.pm2/logs/watchtower-error.log`, and it is multi-line, so grepping for `Clip Transcode` alone hides the real reason. If the probe logs `VAAPI probe failed`, check the groups above first; as a stopgap add `TRANSCODE_HWACCEL=vaapi` to the NUC's `.env` (skips the probe) or revert below.
+
+### Before deploying
+
+```bash
+# From your local checkout (confirm the NUC is on b472f6e first: ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git log --oneline -1")
+git tag -a pre-transcode-probe-2026-09-21 b472f6e -m "Backup point before transcode probe/queue changes"
+git push origin pre-transcode-probe-2026-09-21
+
+# Snapshot the running build on the NUC
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && mkdir -p ../watchtower-backups && cp -r dist ../watchtower-backups/dist-pre-transcode-probe-\$(date +%Y%m%d-%H%M%S)"
+```
+
+### To revert
+
+**Fast path — restores the exact build that was running, no rebuild, back in seconds** (substitute the real timestamp from `ls ~/watchtower-backups/`):
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-transcode-probe-<timestamp> dist && pm2 restart watchtower"
+```
+
+**Full path — also rolls back the source tree to that commit:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-transcode-probe-2026-09-21 -- server.ts Dockerfile .env.example && npm run build && pm2 restart watchtower"
+```
+
+The optional `TRANSCODE_HWACCEL` / `TRANSCODE_CONCURRENCY` env vars are harmless to leave in `.env` after a revert (the old code ignores them).
+
+After either, confirm it came back up:
+```bash
+curl -s http://192.168.2.210:8100/api/birds/status
+```
+
+---
+
 ## 2026-09-15 — Fix dead "Generate AI Brief" endpoint, full description sidebar in Snapshot view
 
 Before deploying (commit `d2a59e4`), a backup point was made of the last-known-good build (commit `343196d` — genai description surfacing, running live and stable at the time).
