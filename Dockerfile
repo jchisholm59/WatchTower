@@ -6,11 +6,16 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install FFmpeg (audio relay + clip transcoding) and the Intel VAAPI driver
-# so clip transcoding can use Quick Sync hardware encoding on Intel hosts
-# (e.g. a NUC) when /dev/dri is passed through. Falls back to software
-# encoding automatically if the driver or device isn't available.
-RUN apt-get update && apt-get install -y ffmpeg intel-media-va-driver vainfo && rm -rf /var/lib/apt/lists/*
+# Install FFmpeg (audio relay + clip transcoding). On amd64 also install the
+# Intel VAAPI driver so clip transcoding can use Quick Sync hardware encoding
+# (e.g. a NUC) when /dev/dri is passed through. The driver only exists for
+# amd64, so other architectures (e.g. arm64 / Apple Silicon) get plain ffmpeg
+# and software x264. Either way, transcoding falls back to software
+# automatically if the driver or device isn't usable.
+RUN apt-get update \
+    && apt-get install -y ffmpeg \
+    && if [ "$(dpkg --print-architecture)" = "amd64" ]; then apt-get install -y intel-media-va-driver vainfo; fi \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install npm dependencies
 RUN npm install

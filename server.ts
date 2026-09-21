@@ -100,13 +100,98 @@ async function probeVideoCodec(url: string): Promise<string | null> {
 }
 
 const VAAPI_DEVICE = '/dev/dri/renderD128';
-let vaapiAvailable: boolean | null = null;
-function hasVaapiDevice(): boolean {
-  if (vaapiAvailable === null) {
-    vaapiAvailable = fs.existsSync(VAAPI_DEVICE);
-    console.log(`[Clip Transcode] VAAPI hardware device ${vaapiAvailable ? 'found' : 'not found'} at ${VAAPI_DEVICE}`);
+
+// TRANSCODE_HWACCEL: 'auto' (default) probes VAAPI once with a tiny test
+// encode; 'vaapi' skips the probe and always tries it; 'none' goes straight to
+// software. A render node existing isn't proof of an encoder behind it — e.g.
+// Apple Silicon under Asahi Linux exposes /dev/dri/renderD128 (the GPU) but has
+// no VAAPI video driver, so an existence check alone would fail every
+// transcode once before falling back.
+// Read lazily: dotenv.config() runs further down this file, after module-level consts.
+const transcodeHwaccelMode = () => (process.env.TRANSCODE_HWACCEL || 'auto').toLowerCase();
+
+let vaapiProbe: Promise<boolean> | null = null;
+function hasVaapiEncoder(): Promise<boolean> {
+  if (vaapiProbe) return vaapiProbe;
+  vaapiProbe = (async () => {
+    const mode = transcodeHwaccelMode();
+    if (mode === 'none') {
+      console.log('[Clip Transcode] TRANSCODE_HWACCEL=none, using software encoding');
+      return false;
+    }
+    if (!fs.existsSync(VAAPI_DEVICE)) {
+      console.log(`[Clip Transcode] No VAAPI device at ${VAAPI_DEVICE}, using software encoding`);
+      return false;
+    }
+    if (mode === 'vaapi') {
+      console.log('[Clip Transcode] TRANSCODE_HWACCEL=vaapi, skipping probe');
+      return true;
+    }
+    // Same encoder options as the real transcode, on a few synthetic frames.
+    const ok = await new Promise<boolean>((resolve) => {
+      let stderr = '';
+      const probe = spawn('ffmpeg', [
+        '-v', 'error',
+        '-vaapi_device', VAAPI_DEVICE,
+        '-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=10',
+        '-frames:v', '5',
+        '-vf', 'format=nv12,hwupload',
+        '-c:v', 'h264_vaapi',
+        '-low_power', '1',
+        '-f', 'null', '-',
+      ]);
+      const timer = setTimeout(() => probe.kill('SIGKILL'), 15000);
+      probe.stderr.on('data', (d) => { stderr += d.toString(); });
+      probe.on('error', () => { clearTimeout(timer); resolve(false); });
+      probe.on('close', (code) => {
+        clearTimeout(timer);
+        if (code !== 0) {
+          console.log(`[Clip Transcode] VAAPI probe failed (exit ${code}), using software encoding: ${stderr.trim().split('\n').slice(-2).join(' | ')}`);
+        }
+        resolve(code === 0);
+      });
+    });
+    if (ok) console.log('[Clip Transcode] VAAPI hardware encoder verified by probe');
+    return ok;
+  })();
+  return vaapiProbe;
+}
+
+// Cap on simultaneous transcodes. Each one is a full decode + encode of a
+// possibly-4K clip; a burst of events (or on a small-RAM host, software x264
+// jobs) can otherwise pile up in parallel and exhaust memory/CPU.
+const transcodeConcurrency = () => Math.max(1, parseInt(process.env.TRANSCODE_CONCURRENCY || '2', 10) || 2);
+let activeTranscodes = 0;
+type TranscodeWaiter = { key: string; wake: () => void };
+// On-demand requests (someone is waiting on a spinner) jump ahead of background
+// cache-warming jobs. A running job is never interrupted — this only reorders
+// the line.
+const transcodeWaitersHigh: TranscodeWaiter[] = [];
+const transcodeWaitersLow: TranscodeWaiter[] = [];
+
+// Move an already-queued background job to the front lane, e.g. when the user
+// opens a clip whose pre-warm is still waiting for a slot. No-op if the job is
+// already running, already high priority, or not queued.
+function promoteTranscode(key: string) {
+  const i = transcodeWaitersLow.findIndex((w) => w.key === key);
+  if (i >= 0) transcodeWaitersHigh.push(...transcodeWaitersLow.splice(i, 1));
+}
+
+async function withTranscodeSlot<T>(key: string, priority: 'high' | 'low', fn: () => Promise<T>): Promise<T> {
+  if (activeTranscodes >= transcodeConcurrency()) {
+    await new Promise<void>((wake) => {
+      (priority === 'high' ? transcodeWaitersHigh : transcodeWaitersLow).push({ key, wake });
+    });
+  } else {
+    activeTranscodes++;
   }
-  return vaapiAvailable;
+  try {
+    return await fn();
+  } finally {
+    // Hand the slot straight to the next waiter (count stays the same), or free it.
+    const next = transcodeWaitersHigh.shift() ?? transcodeWaitersLow.shift();
+    if (next) next.wake(); else activeTranscodes--;
+  }
 }
 
 // Maps Frigate's detector "type" config value to a short display label for
@@ -206,24 +291,27 @@ function transcodeToFileSoftware(url: string, outPath: string): Promise<void> {
 // interval, that flush can be delayed long enough that the browser never
 // receives playable data in time and gives up.
 //
-// Tries Intel Quick Sync (VAAPI) hardware encoding first when a render
-// device is present, and falls back to the software encoder on any hardware
+// Tries Intel Quick Sync (VAAPI) hardware encoding first when a probe confirms
+// a working encoder, and falls back to the software encoder on any hardware
 // failure — a broken or unsupported VAAPI setup must never break playback,
-// only cost the speed advantage.
-async function transcodeToFile(url: string, outPath: string): Promise<void> {
-  if (hasVaapiDevice()) {
-    const startedAt = Date.now();
-    try {
-      await transcodeToFileVaapi(url, outPath);
-      console.log(`[Clip Transcode] VAAPI hardware encode finished in ${Date.now() - startedAt}ms`);
-      return;
-    } catch (err) {
-      console.error(`[Clip Transcode] VAAPI hardware encode failed after ${Date.now() - startedAt}ms, falling back to software: ${(err as Error).message}`);
+// only cost the speed advantage. Runs under the transcode concurrency cap;
+// 'high' priority (on-demand playback) is served before 'low' (background warm).
+function transcodeToFile(url: string, outPath: string, priority: 'high' | 'low'): Promise<void> {
+  return withTranscodeSlot(outPath, priority, async () => {
+    if (await hasVaapiEncoder()) {
+      const startedAt = Date.now();
+      try {
+        await transcodeToFileVaapi(url, outPath);
+        console.log(`[Clip Transcode] VAAPI hardware encode finished in ${Date.now() - startedAt}ms`);
+        return;
+      } catch (err) {
+        console.error(`[Clip Transcode] VAAPI hardware encode failed after ${Date.now() - startedAt}ms, falling back to software: ${(err as Error).message}`);
+      }
     }
-  }
-  const startedAt = Date.now();
-  await transcodeToFileSoftware(url, outPath);
-  console.log(`[Clip Transcode] Software encode finished in ${Date.now() - startedAt}ms`);
+    const startedAt = Date.now();
+    await transcodeToFileSoftware(url, outPath);
+    console.log(`[Clip Transcode] Software encode finished in ${Date.now() - startedAt}ms`);
+  });
 }
 
 // Transcodes are triggered both by an on-demand playback request and by the
@@ -232,7 +320,7 @@ async function transcodeToFile(url: string, outPath: string): Promise<void> {
 // ffmpeg process racing to write the same cache file. Callers await the
 // shared promise instead of starting their own.
 const inFlightTranscodes = new Map<string, Promise<void>>();
-function ensureTranscodedClip(url: string): { cachedPath: string; ready: Promise<void> } {
+function ensureTranscodedClip(url: string, priority: 'high' | 'low' = 'low'): { cachedPath: string; ready: Promise<void> } {
   const cacheKey = crypto.createHash('sha1').update(url).digest('hex');
   const cachedPath = path.join(CLIP_CACHE_DIR, `${cacheKey}.mp4`);
 
@@ -242,10 +330,13 @@ function ensureTranscodedClip(url: string): { cachedPath: string; ready: Promise
 
   let ready = inFlightTranscodes.get(cachedPath);
   if (!ready) {
-    ready = transcodeToFile(url, cachedPath).finally(() => {
+    ready = transcodeToFile(url, cachedPath, priority).finally(() => {
       inFlightTranscodes.delete(cachedPath);
     });
     inFlightTranscodes.set(cachedPath, ready);
+  } else if (priority === 'high') {
+    // Someone is now actively waiting on a job that was queued as background work.
+    promoteTranscode(cachedPath);
   }
   return { cachedPath, ready };
 }
@@ -2563,7 +2654,7 @@ Return a JSON object with:
       // shares this with the MQTT-triggered background cache warm below, so
       // if that already finished (or is still running) for this event, we
       // reuse it instead of starting a second, redundant ffmpeg process.
-      const { cachedPath, ready } = ensureTranscodedClip(fullUrl);
+      const { cachedPath, ready } = ensureTranscodedClip(fullUrl, 'high');
 
       try {
         await ready;
