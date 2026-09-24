@@ -1385,8 +1385,14 @@ async function startServer() {
         if (statsResp.ok) {
           console.log(`[Stats] Successfully fetched live telemetry from ${cleanBase} (${fetchDuration}ms)`);
           const stats: any = await statsResp.json();
+          // Per-process cpu_usages entries are each a % of one core, so summing
+          // them overshoots 100 on a healthy box. Prefer Frigate's whole-system
+          // figure and only fall back to the (clamped) sum if it's missing.
           let totalCpu = 0;
-          if (stats.cpu_usages) {
+          const fullSystemCpu = parseFloat(stats.cpu_usages?.['frigate.full_system']?.cpu);
+          if (!isNaN(fullSystemCpu)) {
+            totalCpu = fullSystemCpu;
+          } else if (stats.cpu_usages) {
             Object.values(stats.cpu_usages).forEach((proc: any) => {
               const cpuVal = parseFloat(proc?.cpu || 0);
               if (!isNaN(cpuVal)) totalCpu += cpuVal;
@@ -1404,10 +1410,17 @@ async function startServer() {
             const det = stats.detectors[firstDetKey];
             if (det) {
               inferenceSpeedMs = Math.round((det.inference_speed || 8.35) * 100) / 100;
-              detectionFps = Math.round((det.detection_fps || 0) * 10) / 10;
               detectorType = firstDetKey;
             }
           }
+          // Newer Frigate reports detection_fps at the top level (and per
+          // camera), not inside the detector entry.
+          const camDetFps = Object.values(stats.cameras || {}).reduce(
+            (sum: number, cam: any) => sum + (parseFloat(cam?.detection_fps) || 0), 0);
+          const topDetFps = parseFloat(stats.detection_fps);
+          const detFpsRaw = !isNaN(topDetFps) ? topDetFps
+            : parseFloat(stats.detectors?.[detectorType]?.detection_fps) || camDetFps;
+          detectionFps = Math.round(detFpsRaw * 10) / 10;
 
           // The stats key (e.g. "coral", "detector01") is config-defined and
           // doesn't reveal the actual hardware, so look up the real type
