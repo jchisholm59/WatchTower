@@ -1640,6 +1640,139 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
             </p>
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Home Latitude</label>
+              <input
+                type="number"
+                step="0.00001"
+                placeholder="44.65369"
+                value={flights.homeLat || ''}
+                onChange={(e) => updateFlights({ homeLat: parseFloat(e.target.value) || 0 })}
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-white placeholder-slate-700 focus:outline-none focus:border-amber-500"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Home Longitude</label>
+              <input
+                type="number"
+                step="0.00001"
+                placeholder="-63.81416"
+                value={flights.homeLon || ''}
+                onChange={(e) => updateFlights({ homeLon: parseFloat(e.target.value) || 0 })}
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-white placeholder-slate-700 focus:outline-none focus:border-amber-500"
+              />
+            </div>
+          </div>
+
+          <div className="border border-slate-800 bg-slate-900/60 rounded-xl p-4 space-y-3">
+            <div className="flex items-center gap-2 text-xs text-slate-300">
+              <Clock className="w-4 h-4 text-amber-400" />
+              <span className="uppercase tracking-wider font-black">OpenSky Network (Optional — Departure/Arrival Times)</span>
+            </div>
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              adsbdb.com and planespotters.net never carry timing data. Adding a free{' '}
+              <a href="https://opensky-network.org/" target="_blank" rel="noreferrer" className="text-amber-400 hover:text-amber-300 underline">
+                OpenSky Network
+              </a>{' '}
+              API client (registered under your account, not a login) fills in estimated departure/arrival times and
+              catches more general-aviation flights that adsbdb&apos;s airline-schedule lookup misses.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-400">Client ID</label>
+                <input
+                  type="text"
+                  placeholder="your-api-client"
+                  value={flights.openskyClientId || ''}
+                  onChange={(e) => updateFlights({ openskyClientId: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] uppercase font-bold text-slate-400">Client Secret</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowOpenskySecret(!showOpenskySecret)}
+                    className="text-[10px] text-slate-400 hover:text-white uppercase font-bold"
+                  >
+                    {showOpenskySecret ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <input
+                  type={showOpenskySecret ? 'text' : 'password'}
+                  placeholder="client secret"
+                  value={flights.openskyClientSecret || ''}
+                  onChange={(e) => updateFlights({ openskyClientSecret: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {flightsTestResult && (
+            <div
+              className={`p-3 rounded-xl border text-xs ${
+                flightsTestResult.success
+                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                  : 'bg-red-950/40 border-red-500/40 text-red-300'
+              }`}
+            >
+              {flightsTestResult.message}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-2">
+            <span className="text-xs text-slate-500 font-mono">
+              Origin/destination and aircraft photos come from free community APIs (adsbdb.com, planespotters.net).
+            </span>
+            <button
+              onClick={handleTestFlights}
+              disabled={isTestingFlights || !flights.piawareUrl.trim()}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs uppercase font-black tracking-wider bg-amber-600 hover:bg-amber-500 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-md active:scale-95"
+            >
+              {isTestingFlights ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Radio className="w-3.5 h-3.5" />}
+              <span>{isTestingFlights ? 'Testing...' : 'Test Connection'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* -------------------- WEATHER TAB -------------------- */}
+      {activeChannelTab === 'weather' && (
+        <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5 space-y-5 shadow-md">
+          {/* Header & Enable Toggle */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-sky-950/40 border border-sky-500/30 text-sky-400">
+                <Sunrise className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black uppercase tracking-tight text-white">Weather</h4>
+                <p className="text-xs text-slate-400">
+                  Current conditions and a 7-day forecast for one or more saved places, via Open-Meteo (free, no key required).
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  id="toggle-weather-enabled"
+                  type="checkbox"
+                  checked={weather.enabled}
+                  onChange={(e) => updateWeather({ enabled: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-600"></div>
+                <span className="ml-2.5 text-xs font-black uppercase tracking-wider text-slate-300">
+                  {weather.enabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </label>
+            </div>
+          </div>
+
           {/* Saved locations */}
           <div className="space-y-2">
             <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
