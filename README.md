@@ -100,7 +100,7 @@ Find both in the **Zones Studio** tab (admin-only, since both write to shared no
 *   **Aircraft Detail:** Click any plane for its photo, type, registration, and origin/destination — sourced from free community APIs (adsbdb.com, planespotters.net), with optional departure/arrival times via a free registered OpenSky Network API client.
 
 ### 🌤 Weather
-*   **Current Conditions:** Temperature, feels-like, humidity, wind, pressure, and precipitation for your home location.
+*   **Current Conditions:** Temperature, feels-like, humidity, wind, pressure, and precipitation for any saved place, chosen from a drop-down (remembered per browser).
 *   **7-Day Forecast:** Daily highs/lows, precipitation chance, and sunrise/sunset — no API key required (Open-Meteo).
 
 ---
@@ -247,7 +247,7 @@ The **Flights** tab polls the receiver every few seconds — no data leaves your
 ## 🌤 Weather Setup
 Uses [Open-Meteo](https://open-meteo.com/) — free, no API key or account needed. In the dashboard, go to **Notifications -> Weather**:
 1.  **Enable Integration:** Toggle the switch to ON.
-2.  **Home Coordinates:** Enter your latitude/longitude (the same values as Tides/Flights, if configured).
+2.  **Locations:** Start typing a place name (e.g. "Merigomish") and pick it from the list (Open-Meteo's free place lookup); repeat for up to 8 places. The first is the default; you can rename places, make another the default, or add one by latitude/longitude. Older installs that only had home coordinates show up as a single location called "Home".
 
 The **Weather** tab refreshes every 10 minutes, matching the server-side cache.
 

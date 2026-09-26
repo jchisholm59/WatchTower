@@ -309,10 +309,37 @@ export interface FlightDetail {
 
 // --- Weather (Open-Meteo) ---
 
+export interface WeatherLocation {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface WeatherSearchResult {
+  id: string;
+  name: string;
+  region: string;
+  country: string;
+  countryCode: string;
+  latitude: number;
+  longitude: number;
+}
+
 export interface WeatherConfig {
   enabled: boolean;
+  /** Saved places; the first is the default. Older settings only have homeLat/homeLon. */
+  locations?: WeatherLocation[];
+  /** Mirrors the first location (kept for older settings and compatibility). */
   homeLat: number;
   homeLon: number;
+}
+
+/** Saved locations, falling back to the legacy single home lat/lon. */
+export function getWeatherLocations(cfg?: Partial<WeatherConfig>): WeatherLocation[] {
+  if (cfg?.locations && cfg.locations.length > 0) return cfg.locations;
+  if (cfg?.homeLat && cfg?.homeLon) return [{ id: 'home', name: 'Home', latitude: cfg.homeLat, longitude: cfg.homeLon }];
+  return [];
 }
 
 export interface WeatherCurrent {
@@ -341,6 +368,7 @@ export interface WeatherDailyEntry {
 
 export interface WeatherReadout {
   success: boolean;
+  location?: { id: string; name: string };
   current?: WeatherCurrent;
   daily?: WeatherDailyEntry[];
   timezone?: string;

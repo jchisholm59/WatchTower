@@ -18,7 +18,7 @@ import {
   CloudLightning,
   CloudMoon,
 } from 'lucide-react';
-import { WeatherConfig, WeatherReadout } from '../types';
+import { WeatherConfig, WeatherReadout, getWeatherLocations } from '../types';
 
 interface WeatherViewProps {
   config?: WeatherConfig;
@@ -48,18 +48,46 @@ function compassDirection(deg: number): string {
 }
 
 const POLL_INTERVAL_MS = 10 * 60 * 1000; // matches the server's own cache TTL
+const SELECTED_LOCATION_KEY = 'watchtower.weather.location';
+
+// The chosen place is remembered per browser, so each person/device can look at
+// their own (e.g. the cottage) without changing the shared settings.
+function loadSelectedLocation(): string {
+  try {
+    return localStorage.getItem(SELECTED_LOCATION_KEY) || '';
+  } catch {
+    return '';
+  }
+}
 
 export const WeatherView: React.FC<WeatherViewProps> = ({ config, onGoToSettings }) => {
   const [readout, setReadout] = useState<WeatherReadout | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isConfigured = Boolean(config?.enabled && config?.homeLat && config?.homeLon);
+  const locations = getWeatherLocations(config);
+  const isConfigured = Boolean(config?.enabled && locations.length > 0);
+
+  const [savedSelection, setSavedSelection] = useState(loadSelectedLocation);
+  // Fall back to the first location if the remembered one was removed in settings.
+  const selectedId = locations.some((l) => l.id === savedSelection) ? savedSelection : locations[0]?.id ?? '';
+
+  const selectedLocation = locations.find((l) => l.id === selectedId);
+
+  const chooseLocation = (id: string) => {
+    setSavedSelection(id);
+    setReadout(null);
+    try {
+      localStorage.setItem(SELECTED_LOCATION_KEY, id);
+    } catch {
+      // storage unavailable — the choice just won't be remembered
+    }
+  };
 
   const fetchWeather = async () => {
     setIsLoading(true);
     try {
-      const resp = await fetch('/api/weather/current');
+      const resp = await fetch(`/api/weather/current?loc=${encodeURIComponent(selectedId)}`);
       const data = await resp.json();
       if (data.success) {
         setReadout(data);
@@ -80,7 +108,7 @@ export const WeatherView: React.FC<WeatherViewProps> = ({ config, onGoToSettings
     const interval = setInterval(fetchWeather, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConfigured]);
+  }, [isConfigured, selectedId]);
 
   if (!isConfigured) {
     return (
@@ -90,7 +118,7 @@ export const WeatherView: React.FC<WeatherViewProps> = ({ config, onGoToSettings
         </div>
         <h3 className="text-white font-black uppercase tracking-[0.2em] text-sm">Weather Not Configured</h3>
         <p className="text-slate-600 text-[10px] mt-2 max-w-[260px] uppercase font-bold tracking-widest leading-relaxed">
-          Set your home coordinates to see current conditions and a 7-day forecast.
+          Add a location to see current conditions and a 7-day forecast.
         </p>
         <button
           onClick={onGoToSettings}
@@ -112,9 +140,29 @@ export const WeatherView: React.FC<WeatherViewProps> = ({ config, onGoToSettings
         <div className="flex items-center gap-2.5">
           <CloudSun className="w-5 h-5 text-sky-400" />
           <h2 className="text-lg font-black uppercase tracking-tight text-white">Weather</h2>
-          {readout?.timezone && (
+          {locations.length > 1 ? (
+            <select
+              id="weather-location-select"
+              value={selectedId}
+              onChange={(e) => chooseLocation(e.target.value)}
+              className="max-w-[16rem] px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-bold text-white focus:outline-none focus:border-sky-500"
+            >
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs font-bold text-white">
+              {locations[0]?.name}
+            </span>
+          )}
+          {/* Coordinates, not the time zone: every place in Nova Scotia reports "America/Halifax",
+              which made the page look like it was stuck on Halifax. */}
+          {selectedLocation && (
             <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono font-bold text-slate-300">
-              {readout.timezone}
+              {selectedLocation.latitude.toFixed(3)}, {selectedLocation.longitude.toFixed(3)}
             </span>
           )}
         </div>

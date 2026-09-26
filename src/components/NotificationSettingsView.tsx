@@ -30,7 +30,7 @@ import {
   CloudSun,
   Sunrise,
 } from 'lucide-react';
-import { NotificationSettings, NotificationLog, BirdNetConfig, TidalConfig, TidalStation, FlightsConfig, WeatherConfig } from '../types';
+import { NotificationSettings, NotificationLog, BirdNetConfig, TidalConfig, TidalStation, FlightsConfig, WeatherConfig, WeatherLocation, WeatherSearchResult, getWeatherLocations } from '../types';
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   gmail: {
@@ -99,6 +99,7 @@ const DEFAULT_TIDES: TidalConfig = DEFAULT_NOTIFICATION_SETTINGS.tides!;
 const MAX_TIDE_STATIONS = 4;
 const DEFAULT_FLIGHTS: FlightsConfig = DEFAULT_NOTIFICATION_SETTINGS.flights!;
 const DEFAULT_WEATHER: WeatherConfig = DEFAULT_NOTIFICATION_SETTINGS.weather!;
+const MAX_WEATHER_LOCATIONS = 8;
 
 interface NotificationSettingsViewProps {
   settings: NotificationSettings;
@@ -311,6 +312,78 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
     const updated = { ...localSettings, weather: { ...weather, ...partial } };
     setLocalSettings(updated);
     onUpdateSettings(updated);
+  };
+
+  // Saved weather locations. homeLat/homeLon always mirror the first one so
+  // older settings (and anything still reading them) keep working.
+  const weatherLocations = getWeatherLocations(weather);
+  const setWeatherLocations = (locations: WeatherLocation[]) => {
+    updateWeather({
+      locations,
+      homeLat: locations[0]?.latitude ?? 0,
+      homeLon: locations[0]?.longitude ?? 0,
+    });
+  };
+
+  // Weather place search: type-ahead against the server's geocoding lookup.
+  const [weatherQuery, setWeatherQuery] = useState('');
+  const [weatherResults, setWeatherResults] = useState<WeatherSearchResult[]>([]);
+  const [weatherSearching, setWeatherSearching] = useState(false);
+  const [weatherSearchError, setWeatherSearchError] = useState<string | null>(null);
+  const [manualLoc, setManualLoc] = useState({ name: '', lat: '', lon: '' });
+
+  useEffect(() => {
+    const q = weatherQuery.trim();
+    if (q.length < 2) {
+      setWeatherResults([]);
+      setWeatherSearchError(null);
+      return;
+    }
+    let stale = false;
+    const timer = setTimeout(async () => {
+      setWeatherSearching(true);
+      try {
+        const resp = await fetch(`/api/weather/search?q=${encodeURIComponent(q)}`);
+        const data = await resp.json();
+        if (stale) return;
+        if (data.success) {
+          setWeatherResults(data.results || []);
+          setWeatherSearchError(data.results?.length ? null : 'No matching places found.');
+        } else {
+          setWeatherSearchError(data.error || 'Search failed');
+        }
+      } catch {
+        if (!stale) setWeatherSearchError('Network error reaching the server.');
+      } finally {
+        if (!stale) setWeatherSearching(false);
+      }
+    }, 300);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [weatherQuery]);
+
+  const newLocationId = () => `loc-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+  const addWeatherLocation = (r: WeatherSearchResult) => {
+    if (weatherLocations.length >= MAX_WEATHER_LOCATIONS) return;
+    const label = [r.name, r.region].filter(Boolean).join(', ');
+    setWeatherLocations([...weatherLocations, { id: newLocationId(), name: label, latitude: r.latitude, longitude: r.longitude }]);
+    setWeatherQuery('');
+    setWeatherResults([]);
+  };
+
+  const addManualLocation = () => {
+    const lat = parseFloat(manualLoc.lat);
+    const lon = parseFloat(manualLoc.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return;
+    if (weatherLocations.length >= MAX_WEATHER_LOCATIONS) return;
+    setWeatherLocations([
+      ...weatherLocations,
+      { id: newLocationId(), name: manualLoc.name.trim() || `${lat.toFixed(3)}, ${lon.toFixed(3)}`, latitude: lat, longitude: lon },
+    ]);
+    setManualLoc({ name: '', lat: '', lon: '' });
   };
 
   // Tide station search
@@ -1567,163 +1640,126 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Home Latitude</label>
-              <input
-                type="number"
-                step="0.00001"
-                placeholder="44.65369"
-                value={flights.homeLat || ''}
-                onChange={(e) => updateFlights({ homeLat: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-white placeholder-slate-700 focus:outline-none focus:border-amber-500"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Home Longitude</label>
-              <input
-                type="number"
-                step="0.00001"
-                placeholder="-63.81416"
-                value={flights.homeLon || ''}
-                onChange={(e) => updateFlights({ homeLon: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-white placeholder-slate-700 focus:outline-none focus:border-amber-500"
-              />
-            </div>
-          </div>
-
-          <div className="border border-slate-800 bg-slate-900/60 rounded-xl p-4 space-y-3">
-            <div className="flex items-center gap-2 text-xs text-slate-300">
-              <Clock className="w-4 h-4 text-amber-400" />
-              <span className="uppercase tracking-wider font-black">OpenSky Network (Optional — Departure/Arrival Times)</span>
-            </div>
-            <p className="text-[10px] text-slate-500 leading-relaxed">
-              adsbdb.com and planespotters.net never carry timing data. Adding a free{' '}
-              <a href="https://opensky-network.org/" target="_blank" rel="noreferrer" className="text-amber-400 hover:text-amber-300 underline">
-                OpenSky Network
-              </a>{' '}
-              API client (registered under your account, not a login) fills in estimated departure/arrival times and
-              catches more general-aviation flights that adsbdb&apos;s airline-schedule lookup misses.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-400">Client ID</label>
+          {/* Saved locations */}
+          <div className="space-y-2">
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Locations ({weatherLocations.length}/{MAX_WEATHER_LOCATIONS})
+            </label>
+            {weatherLocations.length === 0 && (
+              <p className="text-[11px] text-slate-500">No locations yet. Search for a place below.</p>
+            )}
+            {weatherLocations.map((loc, idx) => (
+              <div key={loc.id} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800">
+                <MapPin className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                 <input
                   type="text"
-                  placeholder="your-api-client"
-                  value={flights.openskyClientId || ''}
-                  onChange={(e) => updateFlights({ openskyClientId: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
+                  value={loc.name}
+                  onChange={(e) =>
+                    setWeatherLocations(weatherLocations.map((l) => (l.id === loc.id ? { ...l, name: e.target.value } : l)))
+                  }
+                  className="flex-1 min-w-0 bg-transparent text-xs font-bold text-white focus:outline-none"
                 />
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] uppercase font-bold text-slate-400">Client Secret</label>
+                <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                  {loc.latitude.toFixed(3)}, {loc.longitude.toFixed(3)}
+                </span>
+                {idx === 0 ? (
+                  <span className="text-[9px] font-black uppercase tracking-wider text-sky-400 shrink-0">Default</span>
+                ) : (
                   <button
-                    type="button"
-                    onClick={() => setShowOpenskySecret(!showOpenskySecret)}
-                    className="text-[10px] text-slate-400 hover:text-white uppercase font-bold"
+                    onClick={() => setWeatherLocations([loc, ...weatherLocations.filter((l) => l.id !== loc.id)])}
+                    className="text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-white shrink-0"
+                    title="Make this the default location"
                   >
-                    {showOpenskySecret ? 'Hide' : 'Show'}
+                    Make default
+                  </button>
+                )}
+                <button
+                  onClick={() => setWeatherLocations(weatherLocations.filter((l) => l.id !== loc.id))}
+                  className="p-1 rounded-lg text-slate-500 hover:text-red-400 shrink-0"
+                  title="Remove"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Place search */}
+          {weatherLocations.length < MAX_WEATHER_LOCATIONS && (
+            <div className="space-y-2">
+              <div className="relative">
+                <input
+                  id="weather-place-search"
+                  type="text"
+                  placeholder="Add a place: start typing (e.g. Merigomish, Halifax)"
+                  value={weatherQuery}
+                  onChange={(e) => setWeatherQuery(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-3.5 pr-9 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-sky-500"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
+                  {weatherSearching ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                </span>
+              </div>
+              {weatherSearchError && <p className="text-[11px] text-slate-500 font-bold">{weatherSearchError}</p>}
+              {weatherResults.length > 0 && (
+                <div className="max-h-56 overflow-y-auto space-y-1.5 border border-slate-800 rounded-xl p-2 bg-slate-900/50">
+                  {weatherResults.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-slate-800/60">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-white truncate">{r.name}</p>
+                        <p className="text-[10px] text-slate-500 truncate">
+                          {[r.region, r.country].filter(Boolean).join(', ')} · {r.latitude.toFixed(2)}, {r.longitude.toFixed(2)}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => addWeatherLocation(r)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-sky-600 text-white text-[10px] font-black uppercase tracking-wider transition-colors"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Add</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <details className="text-[11px] text-slate-500">
+                <summary className="cursor-pointer font-bold uppercase tracking-wider text-[10px]">Or enter coordinates</summary>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 mt-2">
+                  <input
+                    type="text"
+                    placeholder="Name"
+                    value={manualLoc.name}
+                    onChange={(e) => setManualLoc({ ...manualLoc, name: e.target.value })}
+                    className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-700 focus:outline-none focus:border-sky-500"
+                  />
+                  <input
+                    type="number"
+                    step="0.00001"
+                    placeholder="Latitude"
+                    value={manualLoc.lat}
+                    onChange={(e) => setManualLoc({ ...manualLoc, lat: e.target.value })}
+                    className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-700 focus:outline-none focus:border-sky-500"
+                  />
+                  <input
+                    type="number"
+                    step="0.00001"
+                    placeholder="Longitude"
+                    value={manualLoc.lon}
+                    onChange={(e) => setManualLoc({ ...manualLoc, lon: e.target.value })}
+                    className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-700 focus:outline-none focus:border-sky-500"
+                  />
+                  <button
+                    onClick={addManualLocation}
+                    className="flex items-center justify-center gap-1 px-3 py-2 rounded-xl bg-slate-800 hover:bg-sky-600 text-white text-[10px] font-black uppercase tracking-wider transition-colors"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Add</span>
                   </button>
                 </div>
-                <input
-                  type={showOpenskySecret ? 'text' : 'password'}
-                  placeholder="client secret"
-                  value={flights.openskyClientSecret || ''}
-                  onChange={(e) => updateFlights({ openskyClientSecret: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
-                />
-              </div>
-            </div>
-          </div>
-
-          {flightsTestResult && (
-            <div
-              className={`p-3 rounded-xl border text-xs ${
-                flightsTestResult.success
-                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
-                  : 'bg-red-950/40 border-red-500/40 text-red-300'
-              }`}
-            >
-              {flightsTestResult.message}
+              </details>
             </div>
           )}
-
-          <div className="flex items-center justify-between pt-2">
-            <span className="text-xs text-slate-500 font-mono">
-              Origin/destination and aircraft photos come from free community APIs (adsbdb.com, planespotters.net).
-            </span>
-            <button
-              onClick={handleTestFlights}
-              disabled={isTestingFlights || !flights.piawareUrl.trim()}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs uppercase font-black tracking-wider bg-amber-600 hover:bg-amber-500 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-md active:scale-95"
-            >
-              {isTestingFlights ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Radio className="w-3.5 h-3.5" />}
-              <span>{isTestingFlights ? 'Testing...' : 'Test Connection'}</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* -------------------- WEATHER TAB -------------------- */}
-      {activeChannelTab === 'weather' && (
-        <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5 space-y-5 shadow-md">
-          {/* Header & Enable Toggle */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-sky-950/40 border border-sky-500/30 text-sky-400">
-                <Sunrise className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-black uppercase tracking-tight text-white">Weather</h4>
-                <p className="text-xs text-slate-400">
-                  Current conditions and a 7-day forecast for your home location, via Open-Meteo (free, no key required).
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  id="toggle-weather-enabled"
-                  type="checkbox"
-                  checked={weather.enabled}
-                  onChange={(e) => updateWeather({ enabled: e.target.checked })}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-600"></div>
-                <span className="ml-2.5 text-xs font-black uppercase tracking-wider text-slate-300">
-                  {weather.enabled ? 'Enabled' : 'Disabled'}
-                </span>
-              </label>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Home Latitude</label>
-              <input
-                type="number"
-                step="0.00001"
-                placeholder="44.65369"
-                value={weather.homeLat || ''}
-                onChange={(e) => updateWeather({ homeLat: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-white placeholder-slate-700 focus:outline-none focus:border-sky-500"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Home Longitude</label>
-              <input
-                type="number"
-                step="0.00001"
-                placeholder="-63.81416"
-                value={weather.homeLon || ''}
-                onChange={(e) => updateWeather({ homeLon: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-white placeholder-slate-700 focus:outline-none focus:border-sky-500"
-              />
-            </div>
-          </div>
 
           <p className="text-[10px] text-slate-600">
             Forecast data is blended from multiple weather models (including Environment Canada's) via open-meteo.com and

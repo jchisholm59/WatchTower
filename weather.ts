@@ -3,7 +3,12 @@
  * forecast). Free, no API key, takes lat/lon directly.
  *
  * Exposes:
- *   GET /api/weather/current
+ *   GET /api/weather/current?loc=<location id>  — forecast for one saved location
+ *                                                 (defaults to the first)
+ *   GET /api/weather/search?q=<place name>      — place lookup (Open-Meteo geocoding)
+ *
+ * Locations are saved in settings.weather.locations. Older settings that only
+ * have homeLat/homeLon are treated as a single location called "Home".
  *
  * Kept out of server.ts so the feature is self-contained, mirroring
  * tides.ts / flights.ts. No background scheduler — nothing needs to run
@@ -13,11 +18,40 @@
 import type { Express, Request, Response } from 'express';
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
+const GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 const CACHE_TTL = 10 * 60 * 1000; // 10min — be polite to a free public API
+const GEO_CACHE_TTL = 60 * 60 * 1000; // place names don't change
 
 export interface WeatherServiceDeps {
   /** Returns the full persistent settings object (holds `.weather`). */
   getSettings: () => any;
+}
+
+export interface WeatherLocation {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+}
+
+/** Saved locations, falling back to the legacy single home lat/lon. */
+export function getWeatherLocations(cfg: any): WeatherLocation[] {
+  const list = Array.isArray(cfg?.locations) ? cfg.locations : [];
+  const valid = list.filter(
+    (l: any) => l && typeof l.id === 'string' && Number.isFinite(Number(l.latitude)) && Number.isFinite(Number(l.longitude)),
+  );
+  if (valid.length > 0) {
+    return valid.map((l: any) => ({
+      id: l.id,
+      name: String(l.name || 'Location'),
+      latitude: Number(l.latitude),
+      longitude: Number(l.longitude),
+    }));
+  }
+  const lat = Number(cfg?.homeLat);
+  const lon = Number(cfg?.homeLon);
+  if (lat && lon) return [{ id: 'home', name: 'Home', latitude: lat, longitude: lon }];
+  return [];
 }
 
 interface CacheEntry<T> {
@@ -85,19 +119,54 @@ export function createWeatherService(deps: WeatherServiceDeps) {
 
   return {
     registerRoutes(app: Express) {
-      app.get('/api/weather/current', async (_req: Request, res: Response) => {
+      app.get('/api/weather/current', async (req: Request, res: Response) => {
         const settings = deps.getSettings() || {};
-        const cfg = settings.weather || {};
-        const lat = Number(cfg.homeLat);
-        const lon = Number(cfg.homeLon);
-        if (!lat || !lon) {
-          return res.status(400).json({ success: false, error: 'Home coordinates not configured' });
+        const locations = getWeatherLocations(settings.weather);
+        if (locations.length === 0) {
+          return res.status(400).json({ success: false, error: 'No weather location configured' });
         }
+        // Only saved locations are accepted (by id), so this can't be used as an open forecast proxy.
+        const wanted = String(req.query.loc || '');
+        const loc = locations.find((l) => l.id === wanted) || locations[0];
         try {
-          const readout = await fetchForecast(lat, lon);
-          res.json(readout);
+          const readout = await fetchForecast(loc.latitude, loc.longitude);
+          res.json({ ...readout, location: { id: loc.id, name: loc.name } });
         } catch (e: any) {
           res.status(502).json({ success: false, error: e.message || 'Weather fetch failed' });
+        }
+      });
+
+      // Type-ahead place lookup for the settings screen.
+      app.get('/api/weather/search', async (req: Request, res: Response) => {
+        const q = String(req.query.q || '').trim();
+        if (q.length < 2) return res.json({ success: true, results: [] });
+        const cacheKey = `geo:${q.toLowerCase()}`;
+        const cached = cache.get(cacheKey);
+        if (cached && Date.now() - cached.ts < GEO_CACHE_TTL) return res.json(cached.value);
+        try {
+          const params = new URLSearchParams({ name: q, count: '15', language: 'en', format: 'json' });
+          const resp = await fetch(`${GEOCODE_URL}?${params.toString()}`);
+          if (!resp.ok) throw new Error(`Open-Meteo geocoding HTTP ${resp.status}`);
+          const raw = await resp.json();
+          // Canadian places first (stable sort keeps Open-Meteo's own ranking within each group),
+          // so "Merigo" finds Merigomish before villages in France.
+          const ranked = [...(raw.results || [])].sort(
+            (a: any, b: any) => Number(b.country_code === 'CA') - Number(a.country_code === 'CA'),
+          );
+          const results = ranked.slice(0, 8).map((r: any) => ({
+            id: String(r.id),
+            name: r.name,
+            region: r.admin1 || '',
+            country: r.country || '',
+            countryCode: r.country_code || '',
+            latitude: r.latitude,
+            longitude: r.longitude,
+          }));
+          const value = { success: true, results };
+          cache.set(cacheKey, { value, ts: Date.now() });
+          res.json(value);
+        } catch (e: any) {
+          res.status(502).json({ success: false, error: e.message || 'Location search failed' });
         }
       });
     },
