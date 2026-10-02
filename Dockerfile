@@ -23,6 +23,10 @@ RUN npm install
 # Copy the rest of the source code
 COPY . .
 
+# Type-check first: vite/esbuild strip types without checking them, so this
+# is the only step that fails the build on a TypeScript error
+RUN npm run lint
+
 # Build the frontend and bundle the server
 RUN npm run build
 

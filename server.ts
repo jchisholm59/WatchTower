@@ -1415,7 +1415,7 @@ async function startServer() {
           }
           // Newer Frigate reports detection_fps at the top level (and per
           // camera), not inside the detector entry.
-          const camDetFps = Object.values(stats.cameras || {}).reduce(
+          const camDetFps = Object.values(stats.cameras || {}).reduce<number>(
             (sum: number, cam: any) => sum + (parseFloat(cam?.detection_fps) || 0), 0);
           const topDetFps = parseFloat(stats.detection_fps);
           const detFpsRaw = !isNaN(topDetFps) ? topDetFps
