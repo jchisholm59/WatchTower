@@ -23,11 +23,8 @@ RUN npm install
 # Copy the rest of the source code
 COPY . .
 
-# Type-check first: vite/esbuild strip types without checking them, so this
-# is the only step that fails the build on a TypeScript error
-RUN npm run lint
-
-# Build the frontend and bundle the server
+# Type-check, build the frontend and bundle the server (the build script
+# runs tsc first, so a TypeScript error fails the image build)
 RUN npm run build
 
 # Expose the default port (informational only — docker-compose.yml uses
