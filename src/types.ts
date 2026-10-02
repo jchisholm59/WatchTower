@@ -503,5 +503,5 @@ export interface NotificationLog {
 
 export type ActiveTab = 'live' | 'events' | 'birds' | 'tides' | 'flights' | 'weather' | 'zones' | 'config' | 'system' | 'notifications';
 
-export type AppTheme = 'midnight' | 'slate-grey';
+export type AppTheme = 'starlink' | 'midnight' | 'slate-grey';
 

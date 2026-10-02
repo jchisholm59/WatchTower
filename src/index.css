@@ -39,3 +39,49 @@ body[data-theme="slate-grey"] {
   background-color: #1a2233;
 }
 
+
+/* Starlink Theme Palette (matches starlink-monitor) */
+html[data-theme="starlink"],
+body[data-theme="starlink"],
+[data-theme="starlink"] {
+  --color-slate-950: #0f1216; /* page background */
+  --color-slate-900: #171b21; /* panels */
+  --color-slate-800: #2a303a; /* borders / raised surfaces */
+  --color-slate-700: #3a414d;
+  --color-slate-600: #565e6b;
+  --color-slate-500: #737b89;
+  --color-slate-400: #8b93a1; /* muted text */
+  --color-slate-300: #b4bac5;
+  --color-slate-200: #d0d4db;
+  --color-slate-100: #e6e9ee; /* primary text */
+  --color-slate-50: #f2f4f6;
+
+  --color-blue-400: #6fb3ff;
+  --color-blue-500: #4ea1ff; /* accent */
+  --color-blue-600: #3a8be6;
+  --color-sky-400: #6fb3ff;
+  --color-sky-500: #4ea1ff;
+  --color-sky-600: #3a8be6;
+  --color-cyan-400: #4ea1ff;
+  --color-cyan-500: #3a8be6;
+  --color-cyan-600: #2f78cc;
+
+  --color-emerald-300: #6fcba8;
+  --color-emerald-400: #3fb68b; /* good */
+  --color-emerald-500: #34a07a;
+  --color-amber-300: #edc06b;
+  --color-amber-400: #e5a93a; /* warn */
+  --color-amber-500: #d4972a;
+  --color-red-300: #f09a95;
+  --color-red-400: #ec7770;
+  --color-red-500: #e5534b; /* bad */
+  --color-red-600: #cc4239;
+  --color-violet-300: #d0b3ff;
+  --color-violet-400: #b98cff; /* upload */
+  --color-violet-500: #a777f5;
+}
+
+body[data-theme="starlink"] {
+  background-color: #0f1216;
+  color: #e6e9ee;
+}

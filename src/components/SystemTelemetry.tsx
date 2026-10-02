@@ -27,7 +27,7 @@ interface SystemTelemetryProps {
 export const SystemTelemetry: React.FC<SystemTelemetryProps> = ({
   telemetry,
   cameras,
-  theme = 'midnight',
+  theme = 'starlink',
   onSetTheme,
 }) => {
   const recordingsPct = Math.round(
@@ -248,11 +248,42 @@ export const SystemTelemetry: React.FC<SystemTelemetryProps> = ({
             </div>
           </div>
           <span className="self-start sm:self-auto px-3 py-1 rounded-xl bg-slate-950 border border-slate-800 text-[10px] font-mono font-bold uppercase text-slate-300">
-            Active: <strong className="text-white font-black">{theme === 'slate-grey' ? 'Slate Grey' : 'Midnight Obsidian'}</strong>
+            Active: <strong className="text-white font-black">{theme === 'starlink' ? 'Starlink' : theme === 'slate-grey' ? 'Slate Grey' : 'Midnight Obsidian'}</strong>
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+          {/* Starlink Option */}
+          <button
+            id="theme-select-starlink"
+            type="button"
+            onClick={() => onSetTheme && onSetTheme('starlink')}
+            className={`p-4 rounded-xl text-left border transition-all cursor-pointer group ${
+              theme === 'starlink'
+                ? 'bg-[#0f1216] border-[#4ea1ff] ring-1 ring-[#4ea1ff]/30 shadow-md'
+                : 'bg-[#0f1216]/60 border-slate-800 hover:border-slate-700 hover:bg-[#0f1216] text-slate-400'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-2">
+                <span className="w-3.5 h-3.5 rounded-full bg-[#171b21] border border-[#4ea1ff]/70 inline-block shadow-inner" />
+                Starlink
+              </span>
+              {theme === 'starlink' ? (
+                <span className="px-2 py-0.5 rounded-md bg-[#4ea1ff] text-[#0f1216] text-[9px] font-black uppercase tracking-wider">
+                  Active
+                </span>
+              ) : (
+                <span className="text-[10px] uppercase font-bold text-slate-500 group-hover:text-slate-300">
+                  Select
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Neutral graphite palette matching Starlink Monitor (<code className="font-mono text-[10px] text-slate-300">#0f1216 / #171b21</code>) with a sky-blue accent and muted status colours.
+            </p>
+          </button>
+
           {/* Midnight Obsidian Option */}
           <button
             id="theme-select-midnight"

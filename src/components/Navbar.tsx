@@ -52,7 +52,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   isMqttActive,
   mqttStatus,
   notificationSettings,
-  theme = 'midnight',
+  theme = 'starlink',
   onToggleTheme,
   onOpenHostModal,
   onOpenAiSearch,
@@ -366,20 +366,24 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={onToggleTheme}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-200 hover:text-white transition-all shadow-sm group cursor-pointer"
               title={
-                theme === 'slate-grey'
-                  ? 'Current theme: Slate Grey. Click to switch to Midnight Obsidian'
-                  : 'Current theme: Midnight Obsidian. Click to switch to Slate Grey'
+                theme === 'starlink'
+                  ? 'Current theme: Starlink. Click to switch to Midnight Obsidian'
+                  : theme === 'slate-grey'
+                    ? 'Current theme: Slate Grey. Click to switch to Starlink'
+                    : 'Current theme: Midnight Obsidian. Click to switch to Slate Grey'
               }
             >
-              <Palette className={`w-3.5 h-3.5 ${theme === 'slate-grey' ? 'text-cyan-400' : 'text-slate-400 group-hover:text-white'} transition-colors`} />
+              <Palette className={`w-3.5 h-3.5 ${theme === 'midnight' ? 'text-slate-400 group-hover:text-white' : 'text-cyan-400'} transition-colors`} />
               <span className="hidden sm:inline text-[11px]">
-                {theme === 'slate-grey' ? 'Slate Grey' : 'Theme'}
+                {theme === 'starlink' ? 'Starlink' : theme === 'slate-grey' ? 'Slate Grey' : 'Theme'}
               </span>
               <span
                 className={`w-2 h-2 rounded-full border transition-all ${
-                  theme === 'slate-grey'
-                    ? 'bg-cyan-400 border-cyan-200 shadow-[0_0_6px_rgba(34,211,238,0.8)]'
-                    : 'bg-slate-700 border-slate-500'
+                  theme === 'starlink'
+                    ? 'bg-[#4ea1ff] border-[#4ea1ff]/60 shadow-[0_0_6px_rgba(78,161,255,0.8)]'
+                    : theme === 'slate-grey'
+                      ? 'bg-cyan-400 border-cyan-200 shadow-[0_0_6px_rgba(34,211,238,0.8)]'
+                      : 'bg-slate-700 border-slate-500'
                 }`}
               />
             </button>

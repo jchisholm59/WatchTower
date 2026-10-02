@@ -156,25 +156,25 @@ function Dashboard({
     } catch (e) {}
   }, [notificationSettings]);
 
-  // Theme state (persisted: 'midnight' | 'slate-grey')
+  // Theme state (persisted: 'starlink' | 'midnight' | 'slate-grey')
   const [theme, setTheme] = useState<AppTheme>(() => {
     try {
-      const saved = localStorage.getItem('frigate_guardian_theme');
-      if (saved === 'slate-grey' || saved === 'midnight') return saved;
+      const saved = localStorage.getItem('watchtower_theme');
+      if (saved === 'starlink' || saved === 'slate-grey' || saved === 'midnight') return saved;
     } catch (e) {}
-    return 'midnight';
+    return 'starlink';
   });
 
   useEffect(() => {
     try {
-      localStorage.setItem('frigate_guardian_theme', theme);
+      localStorage.setItem('watchtower_theme', theme);
     } catch (e) {}
     document.documentElement.setAttribute('data-theme', theme);
     document.body.setAttribute('data-theme', theme);
   }, [theme]);
 
   const handleToggleTheme = () => {
-    setTheme((prev) => (prev === 'slate-grey' ? 'midnight' : 'slate-grey'));
+    setTheme((prev) => (prev === 'starlink' ? 'midnight' : prev === 'midnight' ? 'slate-grey' : 'starlink'));
   };
 
   // Multi-server state
