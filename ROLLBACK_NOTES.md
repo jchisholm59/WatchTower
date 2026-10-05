@@ -4,6 +4,37 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-10-05 — Login sessions persist across restarts
+
+Deploying commit `51ab459`. Last-known-good is commit `0709998`.
+
+**Git tag:** `pre-persistent-sessions-2026-10-05` at commit `0709998` (pushed).
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-persistent-sessions-20261005-130111/`
+
+Changes, all in `server.ts`:
+
+1. **`FileSessionStore`** replaces express-session's in-memory store. Sessions live in memory and are mirrored to `<DATA_DIR>/sessions.json` (`~/.frigate-guardian/sessions.json` on the NUC, `/app/data/sessions.json` in Docker; mode 600, written via temp file + rename about 1 s after a change, expired ones pruned hourly). SIGINT/SIGTERM handlers flush pending writes before exit, which also makes `docker stop` exit at once instead of after the 10 s kill timeout.
+2. **Sessions are re-validated on every request** (`sessionUser()`): the account must still exist, and the role comes from `users.json`, not the session.
+3. **Revocation:** deleting an account, or an admin resetting its password, signs it out everywhere. Changing your own password signs out your other devices. Login regenerates the session ID.
+
+Verified before deploy against a throwaway instance (own `DATA_DIR`, port 8199): login survives a stop/start; login + immediate stop is still saved; two devices stay signed in independently; a deleted user's session gets 401; a password reset signs that user out but not the admin; a standard user gets 403 from admin routes; changing your own password keeps the current device and drops the other; logout works; only live sessions are stored. **Deployed to both the NUC and the cottage (Docker on 192.168.0.53).** The deploy restart itself signed everyone out one last time, since the old sessions only existed in memory.
+
+**If something goes wrong** (e.g. constant 401s right after signing in): deleting `sessions.json` and restarting just signs everyone out; it never affects accounts.
+
+### To revert
+**Fast path (NUC):**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && rm -rf dist && cp -r ../watchtower-backups/dist-pre-persistent-sessions-20261005-130111 dist && pm2 restart watchtower"
+```
+**Full path:**
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && git checkout pre-persistent-sessions-2026-10-05 -- server.ts && npm run build && pm2 restart watchtower"
+```
+**Cottage (Docker):** `ssh root@192.168.0.53 "cd /root/Frigate-Guardian-Secure && git checkout pre-persistent-sessions-2026-10-05 -- server.ts && docker compose up -d --build"`. A leftover `sessions.json` is harmless after reverting (nothing reads it).
+
+---
+
 ## 2026-10-05 — Run the NUC in production mode (`NODE_ENV=production`)
 
 No code change: deployed commit `9b06c4c`. Before this, pm2 ran `dist/server.cjs` with no `NODE_ENV`, so `server.ts` started Vite's dev middleware and served the UI live from `src/` (with Vite's `allowedHosts` Host check, HMR, and no use of `dist/` for the frontend). Now `npm run build` output in `dist/` is served by `express.static`, and the dev-host check no longer applies.
