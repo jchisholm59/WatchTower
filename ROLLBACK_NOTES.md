@@ -4,6 +4,26 @@ Backup points created before risky deploys to the live NUC (`192.168.2.210:8100`
 
 ---
 
+## 2026-10-05 — Run the NUC in production mode (`NODE_ENV=production`)
+
+No code change: deployed commit `9b06c4c`. Before this, pm2 ran `dist/server.cjs` with no `NODE_ENV`, so `server.ts` started Vite's dev middleware and served the UI live from `src/` (with Vite's `allowedHosts` Host check, HMR, and no use of `dist/` for the frontend). Now `npm run build` output in `dist/` is served by `express.static`, and the dev-host check no longer applies.
+
+**Build snapshot on the NUC:** `/home/jim/watchtower-backups/dist-pre-production-mode-20261005-125543/` (the Oct 2 build that was in `dist/`; the frontend actually being served before this came from `src/` via Vite, not from this snapshot).
+
+**How it was switched:** `npm run build`, then `NODE_ENV=production pm2 restart watchtower --update-env && pm2 save` (the saved dump keeps `NODE_ENV` across reboots). The pm2 daemon wasn't restarted, so it kept the `render` group (991) — checked with `grep '^Groups' /proc/$(pm2 pid watchtower)/status`.
+
+**What changes day to day:** a deploy is now `git pull && npm run build && pm2 restart watchtower`. Edits under `src/` or `public/` no longer go live on `git pull` alone, and `index.html` is served `no-cache`, so phones/TWAs pick up new bundles on the next load.
+
+**Verified live (2026-10-05):** `/live` returns the built `index.html` (no `/@vite` client) on `granite.jchisholm.com:8100`, `granite.taild858f.ts.net`, `192.168.50.197:8100` and `192.168.2.210:8100`; `/api/*` still returns 401 without a session; `/.well-known/assetlinks.json` is served; MQTT, BirdNET and alert filtering came back up. Sessions live in express-session's in-memory store, so this restart (like any restart) signed everyone out.
+
+### To revert (back to Vite dev-middleware mode)
+```bash
+ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && pm2 delete watchtower && pm2 start dist/server.cjs --name watchtower && pm2 save"
+```
+(`pm2 delete` + `start` from a shell without `NODE_ENV` drops the variable; `pm2 restart --update-env` would keep whatever the calling shell has. Starting fresh like this inherits the pm2 daemon's groups, so `render` stays.)
+
+---
+
 ## 2026-09-21 — Clip transcoding: VAAPI probe, concurrency cap, on-demand priority
 
 Deploying commit `b00ac33`. Last-known-good is commit `b472f6e` (Review expand button / AI details icon).
