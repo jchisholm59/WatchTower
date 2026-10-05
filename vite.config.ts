@@ -20,9 +20,8 @@ export default defineConfig(() => {
       // Vite's DNS-rebinding protection rejects any Host header it doesn't
       // recognize. Access via a raw IP/localhost is always allowed, but a
       // named host (like this Tailscale Serve hostname) needs to be listed
-      // explicitly. Scoped to the tailnet's own domain and jchisholm.com
-      // (granite.jchisholm.com, used by the WatchTower mobile app), not wide open.
-      allowedHosts: ['.taild858f.ts.net', '.jchisholm.com'],
+      // explicitly. Scoped to the tailnet's own domain, not wide open.
+      allowedHosts: ['.taild858f.ts.net'],
     },
   };
 });

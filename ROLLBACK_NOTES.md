@@ -53,6 +53,8 @@ ssh 192.168.2.210 "cd /home/jim/Frigate-Guardian-Secure && pm2 delete watchtower
 ```
 (`pm2 delete` + `start` from a shell without `NODE_ENV` drops the variable; `pm2 restart --update-env` would keep whatever the calling shell has. Starting fresh like this inherits the pm2 daemon's groups, so `render` stays.)
 
+**If you do revert to dev mode:** Vite's `allowedHosts` check comes back, and the `.jchisholm.com` entry was removed from `vite.config.ts` afterwards (it does nothing in production). The mobile app's primary address `http://granite.jchisholm.com:8100` would then get 403 "Blocked request" and fall back to the Tailscale/LAN addresses. Re-add `'.jchisholm.com'` to `allowedHosts` to fix that.
+
 ---
 
 ## 2026-09-21 — Clip transcoding: VAAPI probe, concurrency cap, on-demand priority
