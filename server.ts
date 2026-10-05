@@ -461,6 +461,122 @@ function getOrCreateSessionSecret(): string {
   return generated;
 }
 
+// Login sessions, kept in memory and mirrored to DATA_DIR/sessions.json so a
+// restart/redeploy doesn't sign everyone out (express-session's default
+// MemoryStore loses them all). A household has a handful of sessions, so one
+// small JSON file rewritten shortly after each change is plenty. Writes go
+// through a temp file + rename so a crash mid-write can't corrupt it.
+const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
+const SESSION_SAVE_DELAY_MS = 1000;
+const SESSION_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
+
+type StoredSession = session.SessionData;
+
+class FileSessionStore extends session.Store {
+  private sessions = new Map<string, StoredSession>();
+  private saveTimer: NodeJS.Timeout | null = null;
+
+  constructor(private file: string) {
+    super();
+    try {
+      if (fs.existsSync(file)) {
+        const saved = JSON.parse(fs.readFileSync(file, 'utf-8')) as Record<string, StoredSession>;
+        for (const [sid, sess] of Object.entries(saved)) {
+          if (!FileSessionStore.expired(sess)) this.sessions.set(sid, sess);
+        }
+        console.log(`[Auth] Restored ${this.sessions.size} login session(s) from ${file}`);
+      }
+    } catch (err) {
+      console.error(`[Auth] Couldn't read ${file}, starting with no sessions: ${(err as Error).message}`);
+    }
+    setInterval(() => this.prune(), SESSION_PRUNE_INTERVAL_MS).unref();
+  }
+
+  private static expired(sess: StoredSession): boolean {
+    const expires = sess.cookie?.expires;
+    return expires ? new Date(expires).getTime() <= Date.now() : false;
+  }
+
+  private scheduleSave() {
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      this.saveNow();
+    }, SESSION_SAVE_DELAY_MS);
+    this.saveTimer.unref();
+  }
+
+  saveNow() {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    try {
+      const tmp = `${this.file}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(this.sessions)), { mode: 0o600 });
+      fs.renameSync(tmp, this.file);
+    } catch (err) {
+      console.error(`[Auth] Couldn't save sessions to ${this.file}: ${(err as Error).message}`);
+    }
+  }
+
+  private prune() {
+    let removed = 0;
+    for (const [sid, sess] of this.sessions) {
+      if (FileSessionStore.expired(sess)) {
+        this.sessions.delete(sid);
+        removed++;
+      }
+    }
+    if (removed) this.scheduleSave();
+  }
+
+  get(sid: string, cb: (err: any, session?: StoredSession | null) => void) {
+    const sess = this.sessions.get(sid);
+    if (sess && FileSessionStore.expired(sess)) {
+      this.sessions.delete(sid);
+      this.scheduleSave();
+      return cb(null, null);
+    }
+    // Hand out a copy so request handlers can't mutate the stored object.
+    cb(null, sess ? JSON.parse(JSON.stringify(sess)) : null);
+  }
+
+  set(sid: string, sess: StoredSession, cb?: (err?: any) => void) {
+    this.sessions.set(sid, JSON.parse(JSON.stringify(sess)));
+    this.scheduleSave();
+    cb?.();
+  }
+
+  touch(sid: string, sess: StoredSession, cb?: () => void) {
+    const existing = this.sessions.get(sid);
+    if (existing) {
+      existing.cookie = JSON.parse(JSON.stringify(sess.cookie));
+      this.scheduleSave();
+    }
+    cb?.();
+  }
+
+  destroy(sid: string, cb?: (err?: any) => void) {
+    if (this.sessions.delete(sid)) this.scheduleSave();
+    cb?.();
+  }
+
+  // Signs a user out everywhere (account deleted, password reset), except
+  // optionally the session making the request.
+  destroyUserSessions(userId: string, exceptSid?: string): number {
+    let removed = 0;
+    for (const [sid, sess] of this.sessions) {
+      if (sess.userId === userId && sid !== exceptSid) {
+        this.sessions.delete(sid);
+        removed++;
+      }
+    }
+    if (removed) this.scheduleSave();
+    return removed;
+  }
+}
+
 // User accounts. Seeded with a default admin/watchtower account on first
 // boot if no file exists yet — change that password immediately after
 // first login. 'standard' users get the same app access as 'admin' except
@@ -699,9 +815,20 @@ async function startServer() {
     return users.find((u) => u.username.toLowerCase() === username.toLowerCase());
   }
 
+  const sessionStore = new FileSessionStore(SESSIONS_FILE);
+  // pm2 restart sends SIGINT, docker stop SIGTERM: write any pending session
+  // change before exiting. (Under Docker, Node as PID 1 would otherwise ignore
+  // SIGTERM and get killed after the 10 s grace period anyway.)
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(signal, () => {
+      sessionStore.saveNow();
+      process.exit(0);
+    });
+  }
   app.use(session({
     secret: getOrCreateSessionSecret(),
     name: 'watchtower.sid',
+    store: sessionStore,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -711,8 +838,23 @@ async function startServer() {
     },
   }));
 
+  // Sessions now outlive restarts, so a session alone isn't trusted: the
+  // account must still exist, and its role comes from users.json, not from
+  // whatever it was at login (a demoted admin loses admin straight away).
+  function sessionUser(req: express.Request): StoredUser | undefined {
+    if (!req.session.userId) return undefined;
+    const user = users.find((u) => u.id === req.session.userId);
+    if (!user) {
+      req.session.userId = undefined;
+      req.session.role = undefined;
+      return undefined;
+    }
+    if (req.session.role !== user.role) req.session.role = user.role;
+    return user;
+  }
+
   function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
-    if (req.session.userId) return next();
+    if (sessionUser(req)) return next();
     res.status(401).json({ success: false, error: 'Authentication required' });
   }
 
@@ -723,7 +865,7 @@ async function startServer() {
   // admin-only — a 'standard' account still gets full read/use access to
   // the rest of the app, including live view, events, and its own password.
   function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
-    if (req.session.role === 'admin') return next();
+    if (sessionUser(req)?.role === 'admin') return next();
     res.status(403).json({ success: false, error: 'Admin access required' });
   }
 
@@ -773,9 +915,14 @@ async function startServer() {
       return res.status(401).json({ success: false, error: 'Invalid username or password' });
     }
 
-    req.session.userId = user.id;
-    req.session.role = user.role;
-    res.json({ success: true, username: user.username, role: user.role });
+    // New session ID at login, so an ID that existed before signing in
+    // (and might have been seen by someone else) never becomes a login.
+    req.session.regenerate((err) => {
+      if (err) return res.status(500).json({ success: false, error: 'Could not start a session' });
+      req.session.userId = user.id;
+      req.session.role = user.role;
+      res.json({ success: true, username: user.username, role: user.role });
+    });
   });
 
   app.post('/api/auth/logout', (req, res) => {
@@ -803,6 +950,8 @@ async function startServer() {
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);
     saveUsers(users);
+    // Sign this account out on every other device; keep this one signed in.
+    sessionStore.destroyUserSessions(user.id, req.sessionID);
     res.json({ success: true });
   });
 
@@ -852,6 +1001,10 @@ async function startServer() {
 
     target.passwordHash = await bcrypt.hash(newPassword, 10);
     saveUsers(users);
+    // A reset is usually because the password leaked or was forgotten:
+    // sign that account out everywhere (except the admin's own session, if
+    // they reset their own account here).
+    sessionStore.destroyUserSessions(target.id, req.sessionID);
     res.json({ success: true });
   });
 
@@ -867,6 +1020,7 @@ async function startServer() {
 
     users = users.filter((u) => u.id !== target.id);
     saveUsers(users);
+    sessionStore.destroyUserSessions(target.id);
     res.json({ success: true });
   });
 
