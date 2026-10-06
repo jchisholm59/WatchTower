@@ -13,3 +13,8 @@ guardian.env
 SECURITY_NOTES.md
 bird_sightings.json
 frigate_servers.json
+
+# Runtime files when the server runs from the repo folder (DATA_DIR=./data): accounts, session secret, logs
+data/
+pid
+server.log
