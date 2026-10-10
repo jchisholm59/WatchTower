@@ -3,9 +3,6 @@ FROM node:22-slim
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
-
 # Install FFmpeg (audio relay + clip transcoding). On amd64 also install the
 # Intel VAAPI driver so clip transcoding can use Quick Sync hardware encoding
 # (e.g. a NUC) when /dev/dri is passed through. The driver only exists for
@@ -16,6 +13,10 @@ RUN apt-get update \
     && apt-get install -y ffmpeg \
     && if [ "$(dpkg --print-architecture)" = "amd64" ]; then apt-get install -y intel-media-va-driver vainfo; fi \
     && rm -rf /var/lib/apt/lists/*
+
+# Package files only after the apt step: Docker reuses a step's cached result only while nothing before it has
+# changed, so with them above, every update that touched package.json or the lockfile re-ran apt (ffmpeg and all).
+COPY package*.json ./
 
 # Install npm dependencies
 RUN npm install
