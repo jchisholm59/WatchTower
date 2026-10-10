@@ -443,7 +443,10 @@ const MQTT_CONFIG_FILE = path.join(DATA_DIR, 'mqtt_config.json');
 const BIRD_SIGHTINGS_FILE = path.join(DATA_DIR, 'bird_sightings.json');
 const SERVERS_FILE = path.join(DATA_DIR, 'frigate_servers.json');
 const BIRD_ALERT_STATE_FILE = path.join(DATA_DIR, 'bird_alert_state.json');
-const NOTIFICATION_LOGS_FILE = path.join(DATA_DIR, 'notification_logs.json');
+const NOTIFICATION_LOGS_FILE = path.join(DATA_DIR, 'notification_logs.json'); // old format, migrated on start-up
+// One JSON entry per line, appended as entries happen (oldest first in the file). Rewriting the whole history on
+// every entry (the old .json) meant re-serialising ~96 MB about every 2 s: half a CPU core and ~45 MB/s of SSD writes.
+const NOTIFICATION_LOGS_JSONL = path.join(DATA_DIR, 'notification_logs.jsonl');
 
 // Signs the login session cookie. Generated once and persisted outside the
 // repo (in DATA_DIR, same as everything else here) so sessions survive a
@@ -2935,25 +2938,51 @@ Return a JSON object with:
   // restart, so the "audit trail" was effectively only ever as deep as
   // however long it had been since the last deploy/crash/reboot.
   const NOTIFICATION_LOGS_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-  let notificationLogs: NotificationLogRecord[] = [];
+  // Routine "car skipped" entries (a car the filters didn't notify about) made up a third of the history and
+  // aren't worth keeping: they're neither stored nor migrated.
+  const isNoise = (l: Pick<NotificationLogRecord, 'label' | 'status'>) => l.label === 'car' && l.status === 'skipped';
+  let notificationLogs: NotificationLogRecord[] = []; // newest first, as the API returns them
   try {
-    if (fs.existsSync(NOTIFICATION_LOGS_FILE)) {
-      notificationLogs = JSON.parse(fs.readFileSync(NOTIFICATION_LOGS_FILE, 'utf-8'));
+    if (fs.existsSync(NOTIFICATION_LOGS_JSONL)) {
+      const lines = fs.readFileSync(NOTIFICATION_LOGS_JSONL, 'utf-8').split('\n');
+      for (const line of lines) {
+        if (!line) continue;
+        try {
+          notificationLogs.push(JSON.parse(line));
+        } catch {
+          // a line cut short by a crash mid-append: skip it
+        }
+      }
+      notificationLogs.reverse();
       console.log(`[Notifications] Loaded ${notificationLogs.length} log entries from disk`);
+    } else if (fs.existsSync(NOTIFICATION_LOGS_FILE)) {
+      // One-time migration from the old whole-file JSON array (newest first).
+      const old: NotificationLogRecord[] = JSON.parse(fs.readFileSync(NOTIFICATION_LOGS_FILE, 'utf-8'));
+      notificationLogs = old.filter((l) => !isNoise(l));
+      compactNotificationLogs();
+      fs.renameSync(NOTIFICATION_LOGS_FILE, NOTIFICATION_LOGS_FILE + '.migrated');
+      console.log(`[Notifications] Migrated ${old.length} log entries to ${path.basename(NOTIFICATION_LOGS_JSONL)} (kept ${notificationLogs.length}, dropped car-skipped noise); old file kept as .migrated`);
     }
   } catch (err) {
     console.error('[Notifications] Failed to load persisted logs:', err);
   }
 
-  function saveNotificationLogs() {
+  // Drop entries past retention and rewrite the file once (oldest first). Run at start-up and then daily, so the
+  // whole history is written about once a day instead of on every entry.
+  function compactNotificationLogs() {
     try {
       const cutoff = Date.now() - NOTIFICATION_LOGS_RETENTION_MS;
-      notificationLogs = notificationLogs.filter((l) => l.timestamp >= cutoff);
-      fs.writeFileSync(NOTIFICATION_LOGS_FILE, JSON.stringify(notificationLogs, null, 2));
+      notificationLogs = notificationLogs.filter((l) => l.timestamp >= cutoff && !isNoise(l));
+      const tmp = NOTIFICATION_LOGS_JSONL + '.tmp';
+      const body = notificationLogs.slice().reverse().map((l) => JSON.stringify(l)).join('\n');
+      fs.writeFileSync(tmp, body ? body + '\n' : '');
+      fs.renameSync(tmp, NOTIFICATION_LOGS_JSONL);
     } catch (err) {
-      console.error('[Notifications] Failed to persist logs:', err);
+      console.error('[Notifications] Failed to compact logs:', err);
     }
   }
+  compactNotificationLogs();
+  setInterval(compactNotificationLogs, 24 * 60 * 60 * 1000).unref();
 
   function recordNotificationLog(log: Omit<NotificationLogRecord, 'id' | 'timestamp'>) {
     const entry: NotificationLogRecord = {
@@ -2961,8 +2990,12 @@ Return a JSON object with:
       timestamp: Date.now(),
       ...log,
     };
+    if (isNoise(entry)) return entry;
     notificationLogs.unshift(entry);
-    saveNotificationLogs();
+    // Append one line (~250 bytes); never rewrite the history here.
+    fs.appendFile(NOTIFICATION_LOGS_JSONL, JSON.stringify(entry) + '\n', (err) => {
+      if (err) console.error('[Notifications] Failed to append log entry:', err.message);
+    });
     return entry;
   }
 
@@ -3762,7 +3795,7 @@ Return a JSON object with:
   // Clear Notification Logs
   app.post('/api/notifications/clear-logs', (_req, res) => {
     notificationLogs.length = 0;
-    saveNotificationLogs();
+    compactNotificationLogs();
     return res.json({ success: true, message: 'Notification logs cleared' });
   });
 
