@@ -2421,12 +2421,20 @@ Return a JSON object with:
                 thumbnailUrl: activeMqttConfig.frigateServerUrl
                   ? `/api/frigate/proxy/image?serverUrl=${encodeURIComponent(activeMqttConfig.frigateServerUrl)}&path=${encodeURIComponent(`/api/events/${evtData.id}/thumbnail.jpg`)}`
                   : undefined,
-                clipUrl: activeMqttConfig.frigateServerUrl
+                // Only once Frigate says there is a clip: before that (or for an event that never gets one)
+                // the link can only fail, and the player shows "Stream Unavailable".
+                clipUrl: activeMqttConfig.frigateServerUrl && evtData.has_clip
                   ? `/api/frigate/proxy/events/${evtData.id}/clip.mp4?serverUrl=${encodeURIComponent(activeMqttConfig.frigateServerUrl)}`
                   : undefined,
               };
 
-              broadcastToSse({ type: 'frigate_event', event: normalizedEvent });
+              // Frigate deletes an event that ends with neither a clip nor a snapshot (e.g. a parked car outside
+              // every zone, re-tracked under a new id every ~40 s on the driveway): keep those out of the Review
+              // feed, where they could never play. A real event joins the feed once Frigate gives it a clip or
+              // snapshot (an update with the same id), and notifications below are unaffected.
+              if (evtData.has_clip || evtData.has_snapshot) {
+                broadcastToSse({ type: 'frigate_event', event: normalizedEvent });
+              }
 
               // Server-side background notification dispatch
               const isGmail = persistentSettings.gmail?.enabled;

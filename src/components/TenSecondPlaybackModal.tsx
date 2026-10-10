@@ -48,6 +48,13 @@ export const TenSecondPlaybackModal: React.FC<TenSecondPlaybackModalProps> = ({
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [showZones, setShowZones] = useState<boolean>(true);
   const [videoError, setVideoError] = useState<boolean>(false);
+  // Frigate only has the clip some seconds after an event ends (its recording
+  // segments are still being written; until then it answers 400). For a recent
+  // event, keep retrying for a few minutes instead of giving up at once.
+  const [retry, setRetry] = useState<number>(0);
+  const [waitingForClip, setWaitingForClip] = useState<boolean>(false);
+  const retryTimerRef = useRef<number | null>(null);
+  const clipSrc = event?.clipUrl ? event.clipUrl + (retry ? `${event.clipUrl.includes('?') ? '&' : '?'}retry=${retry}` : '') : undefined;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -60,6 +67,10 @@ export const TenSecondPlaybackModal: React.FC<TenSecondPlaybackModalProps> = ({
   const loadedUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = null;
+    setRetry(0);
+    setWaitingForClip(false);
     if (!isOpen) {
       setIsPlaying(false);
       setCurrentTime(0);
@@ -71,7 +82,23 @@ export const TenSecondPlaybackModal: React.FC<TenSecondPlaybackModalProps> = ({
     setCurrentTime(0);
     setVideoError(false);
     loadedUrlRef.current = null;
-  }, [isOpen, event]);
+  }, [isOpen, event?.id]);
+
+  useEffect(() => () => {
+    if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
+  }, []);
+
+  const handleVideoError = () => {
+    const endedAt = event?.endTime || event?.startTime || 0;
+    if (Date.now() - endedAt < 3 * 60_000 && retry < 24) {
+      setWaitingForClip(true);
+      retryTimerRef.current = window.setTimeout(() => setRetry((r) => r + 1), 5000);
+      return;
+    }
+    console.error('[Playback] Video source failed to load');
+    setWaitingForClip(false);
+    setVideoError(true);
+  };
 
   // Video element sync
   useEffect(() => {
@@ -82,8 +109,8 @@ export const TenSecondPlaybackModal: React.FC<TenSecondPlaybackModalProps> = ({
 
     // Only (re)load when the clip actually changes, not on every play/pause
     // or speed toggle.
-    if (event?.clipUrl && loadedUrlRef.current !== event.clipUrl) {
-      loadedUrlRef.current = event.clipUrl;
+    if (clipSrc && loadedUrlRef.current !== clipSrc) {
+      loadedUrlRef.current = clipSrc;
       video.load();
     }
 
@@ -94,7 +121,7 @@ export const TenSecondPlaybackModal: React.FC<TenSecondPlaybackModalProps> = ({
     } else {
       video.pause();
     }
-  }, [isPlaying, speed, videoError, event?.clipUrl]);
+  }, [isPlaying, speed, videoError, clipSrc]);
 
   // Simulated 10-second canvas playback loop if no real video or in simulation
   useEffect(() => {
@@ -200,7 +227,7 @@ export const TenSecondPlaybackModal: React.FC<TenSecondPlaybackModalProps> = ({
           {event.clipUrl && !videoError ? (
             <video
               ref={videoRef}
-              src={event.clipUrl}
+              src={clipSrc}
               className="w-full h-full object-contain"
               playsInline
               muted={isMuted}
@@ -208,10 +235,8 @@ export const TenSecondPlaybackModal: React.FC<TenSecondPlaybackModalProps> = ({
               onTimeUpdate={() => {
                 if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
               }}
-              onError={() => {
-                console.error('[Playback] Video source failed to load');
-                setVideoError(true);
-              }}
+              onLoadedData={() => setWaitingForClip(false)}
+              onError={handleVideoError}
             />
           ) : (
             <canvas
@@ -243,6 +268,16 @@ export const TenSecondPlaybackModal: React.FC<TenSecondPlaybackModalProps> = ({
                 );
               })}
             </svg>
+          )}
+
+          {waitingForClip && !videoError && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-950/60 backdrop-blur-sm p-6 text-center">
+              <Clock className="w-10 h-10 text-sky-400 mb-3 opacity-70 animate-pulse" />
+              <div className="text-white font-black uppercase tracking-widest text-sm mb-1">Clip Still Being Saved</div>
+              <div className="text-slate-400 text-[10px] uppercase font-bold max-w-[260px]">
+                Frigate finishes a clip a few seconds after the event ends. Retrying…
+              </div>
+            </div>
           )}
 
           {/* Video Error Message */}
